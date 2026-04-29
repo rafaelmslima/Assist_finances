@@ -1,7 +1,7 @@
 import logging
 
-from telegram import BotCommand, Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram import BotCommand, BotCommandScopeChat, Update
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 from app.bot.conversations import build_conversation_handlers, cancel_conversation
 from app.bot.handlers import (
@@ -9,6 +9,7 @@ from app.bot.handlers import (
     add_fixed_expense,
     add_income,
     balance,
+    broadcast,
     category_chart,
     compare_months,
     day_summary,
@@ -23,7 +24,10 @@ from app.bot.handlers import (
     start,
     today_summary,
     unknown_command,
+    updates_off,
+    updates_on,
 )
+from app.bot.tutorial import tutorial_callback, tutorial_command
 from app.config import get_database_url, get_settings
 from app.database.session import init_db
 from app.scheduler import start_daily_scheduler
@@ -37,29 +41,46 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_BOT_COMMANDS = [
+    BotCommand("start", "Iniciar o bot e cadastrar usuario"),
+    BotCommand("help", "Ver ajuda e exemplos"),
+    BotCommand("tutorial", "Aprender a usar o bot com botoes"),
+    BotCommand("add", "Adicionar gasto: valor, categoria e descricao"),
+    BotCommand("mes", "Ver resumo de gastos do mes"),
+    BotCommand("hoje", "Ver gastos de hoje"),
+    BotCommand("dia", "Ver gastos de um dia especifico"),
+    BotCommand("grafico", "Ver grafico por categoria"),
+    BotCommand("edit", "Editar um gasto pelo ID"),
+    BotCommand("delete", "Apagar um gasto pelo ID"),
+    BotCommand("receita", "Adicionar uma receita"),
+    BotCommand("saldo", "Ver saldo atual e projetado"),
+    BotCommand("orcamento", "Definir orcamento mensal ou por categoria"),
+    BotCommand("previsao", "Ver previsao de gastos do mes"),
+    BotCommand("comparar", "Comparar mes atual com anterior"),
+    BotCommand("fixo", "Adicionar gasto fixo mensal"),
+    BotCommand("fixos", "Listar gastos fixos"),
+    BotCommand("delete_fixo", "Apagar gasto fixo pelo ID"),
+    BotCommand("updates_off", "Desativar novidades do bot"),
+    BotCommand("updates_on", "Reativar novidades do bot"),
+    BotCommand("cancelar", "Cancelar fluxo guiado em andamento"),
+]
+
+ADMIN_BOT_COMMANDS = [
+    *DEFAULT_BOT_COMMANDS,
+    BotCommand("broadcast", "Enviar novidade para usuarios ativos"),
+]
+
+
 async def post_init(application: Application) -> None:
-    await application.bot.set_my_commands(
-        [
-            BotCommand("start", "Iniciar o bot e cadastrar usuario"),
-            BotCommand("help", "Ver ajuda e exemplos"),
-            BotCommand("add", "Adicionar gasto: valor, categoria e descricao"),
-            BotCommand("mes", "Ver resumo de gastos do mes"),
-            BotCommand("hoje", "Ver gastos de hoje"),
-            BotCommand("dia", "Ver gastos de um dia especifico"),
-            BotCommand("grafico", "Ver grafico por categoria"),
-            BotCommand("edit", "Editar um gasto pelo ID"),
-            BotCommand("delete", "Apagar um gasto pelo ID"),
-            BotCommand("receita", "Adicionar uma receita"),
-            BotCommand("saldo", "Ver saldo atual e projetado"),
-            BotCommand("orcamento", "Definir orcamento mensal ou por categoria"),
-            BotCommand("previsao", "Ver previsao de gastos do mes"),
-            BotCommand("comparar", "Comparar mes atual com anterior"),
-            BotCommand("fixo", "Adicionar gasto fixo mensal"),
-            BotCommand("fixos", "Listar gastos fixos"),
-            BotCommand("delete_fixo", "Apagar gasto fixo pelo ID"),
-            BotCommand("cancelar", "Cancelar fluxo guiado em andamento"),
-        ]
-    )
+    settings = get_settings()
+    await application.bot.set_my_commands(DEFAULT_BOT_COMMANDS)
+
+    for admin_telegram_id in settings.admin_telegram_ids:
+        await application.bot.set_my_commands(
+            ADMIN_BOT_COMMANDS,
+            scope=BotCommandScopeChat(chat_id=admin_telegram_id),
+        )
+
     start_daily_scheduler(application)
 
 
@@ -85,6 +106,7 @@ def build_application() -> Application:
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("tutorial", tutorial_command))
     application.add_handler(CommandHandler("add", add_expense))
     application.add_handler(CommandHandler("mes", month_summary))
     application.add_handler(CommandHandler("hoje", today_summary))
@@ -100,7 +122,11 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("fixo", add_fixed_expense))
     application.add_handler(CommandHandler("fixos", fixed_expenses))
     application.add_handler(CommandHandler("delete_fixo", delete_fixed_expense))
+    application.add_handler(CommandHandler("broadcast", broadcast))
+    application.add_handler(CommandHandler("updates_off", updates_off))
+    application.add_handler(CommandHandler("updates_on", updates_on))
     application.add_handler(CommandHandler("cancelar", cancel_conversation))
+    application.add_handler(CallbackQueryHandler(tutorial_callback, pattern="^tutorial:"))
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
     application.add_error_handler(error_handler)
 

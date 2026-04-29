@@ -31,3 +31,6 @@ class ExpenseService:
 
     def delete_expense(self, user_id: int, expense_id: int) -> bool:
         return self.repository.delete(user_id=user_id, expense_id=expense_id)
+
+    def get_user_expense_categories(self, user_id: int) -> list[str]:
+        return self.repository.list_distinct_categories(user_id)

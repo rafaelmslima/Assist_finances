@@ -4,7 +4,7 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -18,8 +18,11 @@ from app.database.repository import (
     ExpenseRepository,
     FixedExpenseRepository,
     IncomeRepository,
+    UpdateBroadcastRepository,
     UserRepository,
 )
+from app.database.models import UpdateBroadcast
+from app.services.broadcast_service import BroadcastService
 from app.services.budget_service import BudgetService
 from app.services.expense_service import ExpenseService
 from app.services.fixed_expense_service import FixedExpenseService
@@ -115,6 +118,22 @@ class RepositoryWorkflowTest(unittest.TestCase):
             self.assertEqual(fixed_service.list_fixed_expenses(user.id)["total"], 800)
             self.assertEqual(budget_status.get_budget_status(user.id)["total_budget"], 3000)
 
+    def test_expense_categories_are_distinct_sorted_and_user_scoped(self):
+        owner = self._create_user(301)
+        other = self._create_user(302)
+
+        with self.Session() as db:
+            service = ExpenseService(ExpenseRepository(db))
+            service.add_expense(owner.id, ParsedExpense(amount=10, category="mercado", description=None))
+            service.add_expense(owner.id, ParsedExpense(amount=20, category="lazer", description=None))
+            service.add_expense(owner.id, ParsedExpense(amount=30, category="mercado", description="repetida"))
+            service.add_expense(other.id, ParsedExpense(amount=40, category="transporte", description=None))
+
+            self.assertEqual(
+                service.get_user_expense_categories(owner.id),
+                ["lazer", "mercado"],
+            )
+
     def test_daily_notification_unique_by_user_and_date(self):
         user = self._create_user(400)
 
@@ -127,6 +146,57 @@ class RepositoryWorkflowTest(unittest.TestCase):
             notifications.mark_sent(user.id, today)
 
             self.assertTrue(notifications.was_sent(user.id, today))
+
+    def test_update_notification_preference_filters_broadcast_recipients(self):
+        opted_in = self._create_user(601)
+        opted_out = self._create_user(602)
+
+        with self.Session() as db:
+            users = UserRepository(db)
+            users.set_receive_updates_notifications(opted_out.id, False)
+            recipients = users.list_active_update_recipients()
+
+        self.assertEqual([user.id for user in recipients], [opted_in.id])
+
+    def test_broadcast_continues_after_failure_and_records_summary(self):
+        first = self._create_user(701)
+        second = self._create_user(702)
+        third = self._create_user(703)
+
+        with self.Session() as db:
+            UserRepository(db).set_receive_updates_notifications(third.id, False)
+
+        class FakeBot:
+            def __init__(self):
+                self.sent_chat_ids = []
+
+            async def send_message(self, chat_id: int, text: str) -> None:
+                if chat_id == first.telegram_chat_id:
+                    raise RuntimeError("blocked")
+                self.sent_chat_ids.append(chat_id)
+
+        bot = FakeBot()
+        with self.Session() as db:
+            result = asyncio.run(
+                BroadcastService(
+                    UserRepository(db),
+                    UpdateBroadcastRepository(db),
+                ).send_update_broadcast(bot, admin_user_id=999, message="Novidade")
+            )
+
+        self.assertEqual(result.total_users, 2)
+        self.assertEqual(result.sent_count, 1)
+        self.assertEqual(result.failed_count, 1)
+        self.assertEqual(bot.sent_chat_ids, [second.telegram_chat_id])
+
+        with self.Session() as db:
+            broadcast = db.scalar(select(UpdateBroadcast))
+            self.assertIsNotNone(broadcast)
+            self.assertEqual(broadcast.admin_user_id, 999)
+            self.assertEqual(broadcast.message, "Novidade")
+            self.assertEqual(broadcast.total_users, 2)
+            self.assertEqual(broadcast.sent_count, 1)
+            self.assertEqual(broadcast.failed_count, 1)
 
 
 class SchedulerWorkflowTest(unittest.TestCase):

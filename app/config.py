@@ -10,6 +10,7 @@ class Settings:
     database_url: str = "sqlite:///./finance_bot.db"
     timezone: str = "America/Sao_Paulo"
     allowed_telegram_ids: frozenset[int] = frozenset()
+    admin_telegram_ids: frozenset[int] = frozenset()
 
 
 def get_settings() -> Settings:
@@ -22,7 +23,8 @@ def get_settings() -> Settings:
         telegram_bot_token=telegram_bot_token,
         database_url=get_database_url(),
         timezone=os.getenv("TIMEZONE", "America/Sao_Paulo"),
-        allowed_telegram_ids=_parse_allowed_telegram_ids(os.getenv("ALLOWED_TELEGRAM_IDS")),
+        allowed_telegram_ids=_parse_telegram_ids(os.getenv("ALLOWED_TELEGRAM_IDS")),
+        admin_telegram_ids=_parse_telegram_ids(os.getenv("ADMIN_TELEGRAM_IDS")),
     )
 
 
@@ -43,7 +45,7 @@ def _normalize_database_url(database_url: str) -> str:
     return database_url
 
 
-def _parse_allowed_telegram_ids(raw_value: str | None) -> frozenset[int]:
+def _parse_telegram_ids(raw_value: str | None) -> frozenset[int]:
     if not raw_value:
         return frozenset()
 

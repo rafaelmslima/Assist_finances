@@ -27,6 +27,8 @@ Comandos disponiveis:
 /fixo valor categoria descricao opcional - cadastra gasto fixo rapido
 /fixos - lista gastos fixos
 /delete_fixo id - apaga gasto fixo
+/updates_off - desativa notificacoes de novidades
+/updates_on - reativa notificacoes de novidades
 /cancelar - cancela um fluxo guiado
 /help - mostra ajuda e exemplos
 """.strip()
@@ -70,6 +72,8 @@ Receitas, saldo e planejamento:
 /fixo valor categoria descricao opcional
 /fixos
 /delete_fixo id
+/updates_off
+/updates_on
 
 Editar e apagar:
 /edit id valor categoria descricao opcional
@@ -88,8 +92,21 @@ Dicas:
 - Use ponto ou virgula para centavos: 59.90 ou 59,90
 - O id aparece nas listagens de /hoje e /dia
 - Cada usuario ve apenas os proprios gastos
+- Use /updates_off para parar novidades do bot e /updates_on para reativar
 - Digite apenas /add, /receita, /fixo ou /orcamento para usar o modo guiado
 """.strip()
+
+
+def format_broadcast_result(total_users: int, sent_count: int, failed_count: int) -> str:
+    return "\n".join(
+        [
+            "Broadcast concluido.",
+            "",
+            f"Usuarios encontrados: {total_users}",
+            f"Enviados com sucesso: {sent_count}",
+            f"Falhas: {failed_count}",
+        ]
+    )
 
 
 def format_currency(value: float) -> str:

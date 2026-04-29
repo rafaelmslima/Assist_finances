@@ -37,6 +37,7 @@ class User(Base):
     first_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     username: Mapped[str | None] = mapped_column(String(120), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    receive_updates_notifications: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=datetime.now,
@@ -53,6 +54,22 @@ class User(Base):
     budgets: Mapped[list["Budget"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     fixed_expenses: Mapped[list["FixedExpense"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     daily_notifications: Mapped[list["DailyNotification"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+
+class UpdateBroadcast(Base):
+    __tablename__ = "update_broadcasts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    admin_user_id: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
+    message: Mapped[str] = mapped_column(String(4096), nullable=False)
+    total_users: Mapped[int] = mapped_column(Integer, nullable=False)
+    sent_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.now,
+        nullable=False,
+    )
 
 
 class Income(Base):

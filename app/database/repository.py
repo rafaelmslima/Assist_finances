@@ -3,7 +3,7 @@ from datetime import date, datetime
 from sqlalchemy import Select, delete, func, select
 from sqlalchemy.orm import Session
 
-from app.database.models import Budget, DailyNotification, Expense, FixedExpense, Income, User
+from app.database.models import Budget, DailyNotification, Expense, FixedExpense, Income, UpdateBroadcast, User
 
 
 def _month_key(target: date | datetime) -> str:
@@ -90,6 +90,52 @@ class UserRepository:
     def list_active_users(self) -> list[User]:
         statement = select(User).where(User.is_active.is_(True)).order_by(User.id.asc())
         return list(self.db.scalars(statement).all())
+
+    def list_active_update_recipients(self) -> list[User]:
+        statement = (
+            select(User)
+            .where(
+                User.is_active.is_(True),
+                User.telegram_chat_id.is_not(None),
+                User.receive_updates_notifications.is_(True),
+            )
+            .order_by(User.id.asc())
+        )
+        return list(self.db.scalars(statement).all())
+
+    def set_receive_updates_notifications(self, user_id: int, enabled: bool) -> User | None:
+        user = self.db.get(User, user_id)
+        if not user:
+            return None
+        user.receive_updates_notifications = enabled
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+
+class UpdateBroadcastRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def create(
+        self,
+        admin_user_id: int,
+        message: str,
+        total_users: int,
+        sent_count: int,
+        failed_count: int,
+    ) -> UpdateBroadcast:
+        broadcast = UpdateBroadcast(
+            admin_user_id=admin_user_id,
+            message=message,
+            total_users=total_users,
+            sent_count=sent_count,
+            failed_count=failed_count,
+        )
+        self.db.add(broadcast)
+        self.db.commit()
+        self.db.refresh(broadcast)
+        return broadcast
 
 
 class ExpenseRepository:
@@ -210,6 +256,16 @@ class ExpenseRepository:
             Expense.created_at < end_date,
         )
         return float(self.db.scalar(statement) or 0)
+
+    def list_distinct_categories(self, user_id: int) -> list[str]:
+        statement = (
+            select(Expense.category)
+            .where(Expense.user_id == user_id)
+            .where(Expense.category.is_not(None))
+            .distinct()
+            .order_by(Expense.category.asc())
+        )
+        return [str(category) for category in self.db.scalars(statement).all() if category]
 
 
 class IncomeRepository:

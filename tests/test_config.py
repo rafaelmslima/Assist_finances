@@ -2,7 +2,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from app.config import get_database_url
+from app.config import get_database_url, get_settings
 
 
 class DatabaseUrlConfigTest(unittest.TestCase):
@@ -27,6 +27,14 @@ class DatabaseUrlConfigTest(unittest.TestCase):
                 get_database_url(),
                 "postgresql+psycopg://user:pass@host:5432/db",
             )
+
+    def test_admin_telegram_ids_are_parsed(self):
+        with patch.dict(
+            os.environ,
+            {"TELEGRAM_BOT_TOKEN": "test-token", "ADMIN_TELEGRAM_IDS": "123, 456"},
+            clear=True,
+        ):
+            self.assertEqual(get_settings().admin_telegram_ids, frozenset({123, 456}))
 
 
 if __name__ == "__main__":

@@ -1,10 +1,11 @@
 from enum import IntEnum
 
 from telegram import Update
-from telegram.ext import CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
+from telegram.ext import CallbackQueryHandler, CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
 
 from app.bot.commands import (
     format_budget_saved,
+    format_currency,
     format_expense_saved,
     format_fixed_expense_saved,
     format_income_saved,
@@ -16,12 +17,22 @@ from app.bot.handlers import (
     add_income,
     set_budget,
 )
+from app.bot.keyboards import (
+    CANCEL_EXPENSE_CALLBACK,
+    CATEGORY_PREFIX,
+    CONFIRM_EXPENSE_CALLBACK,
+    NEW_CATEGORY_CALLBACK,
+    OTHER_CATEGORY_CALLBACK,
+    build_expense_category_keyboard,
+    build_expense_confirmation_keyboard,
+)
 from app.database.repository import BudgetRepository, ExpenseRepository, FixedExpenseRepository, IncomeRepository
 from app.database.session import SessionLocal
 from app.services.budget_service import BudgetService
 from app.services.expense_service import ExpenseService
 from app.services.fixed_expense_service import FixedExpenseService
 from app.services.income_service import IncomeService
+from app.services.report_service import ReportService
 from app.utils.validators import (
     ExpenseValidationError,
     ParsedBudget,
@@ -36,13 +47,15 @@ class State(IntEnum):
     ADD_AMOUNT = 1
     ADD_CATEGORY = 2
     ADD_DESCRIPTION = 3
-    INCOME_AMOUNT = 4
-    INCOME_DESCRIPTION = 5
-    FIXED_AMOUNT = 6
-    FIXED_CATEGORY = 7
-    FIXED_DESCRIPTION = 8
-    BUDGET_CATEGORY = 9
-    BUDGET_AMOUNT = 10
+    ADD_NEW_CATEGORY = 4
+    ADD_CONFIRM = 5
+    INCOME_AMOUNT = 6
+    INCOME_DESCRIPTION = 7
+    FIXED_AMOUNT = 8
+    FIXED_CATEGORY = 9
+    FIXED_DESCRIPTION = 10
+    BUDGET_CATEGORY = 11
+    BUDGET_AMOUNT = 12
 
 
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -73,15 +86,68 @@ async def receive_add_amount(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return State.ADD_AMOUNT
 
     context.user_data["guided"]["amount"] = amount
-    await update.message.reply_text("Qual a categoria? Exemplo: mercado")
+    with SessionLocal() as db:
+        categories = ExpenseService(ExpenseRepository(db)).get_user_expense_categories(
+            context.user_data["guided"]["user_id"]
+        )
+
+    context.user_data["guided"]["categories"] = categories
+    await update.message.reply_text(
+        "Escolha uma categoria:",
+        reply_markup=build_expense_category_keyboard(categories),
+    )
     return State.ADD_CATEGORY
 
 
 async def receive_add_category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    return await receive_new_add_category(update, context)
+
+
+async def choose_add_category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    guided = context.user_data.get("guided", {})
+    categories = guided.get("categories", [])
+
+    if data == NEW_CATEGORY_CALLBACK:
+        await query.edit_message_text("Qual o nome da nova categoria? Exemplo: mercado")
+        return State.ADD_NEW_CATEGORY
+
+    if data == OTHER_CATEGORY_CALLBACK:
+        guided["category"] = "outros"
+        await query.edit_message_text("Categoria escolhida: Outros")
+        await query.message.reply_text("Descricao opcional.\nEnvie uma descricao ou digite /pular.")
+        return State.ADD_DESCRIPTION
+
+    if data.startswith(f"{CATEGORY_PREFIX}:page:"):
+        page = int(data.rsplit(":", 1)[1])
+        await query.edit_message_reply_markup(reply_markup=build_expense_category_keyboard(categories, page))
+        return State.ADD_CATEGORY
+
+    if data.startswith(f"{CATEGORY_PREFIX}:select:"):
+        category_index = int(data.rsplit(":", 1)[1])
+        if category_index < 0 or category_index >= len(categories):
+            await query.edit_message_text("Categoria invalida. Digite /add para iniciar novamente.")
+            context.user_data.pop("guided", None)
+            return ConversationHandler.END
+
+        category = categories[category_index]
+        guided["category"] = category
+        await query.edit_message_text(f"Categoria escolhida: {category}")
+        await query.message.reply_text("Descricao opcional.\nEnvie uma descricao ou digite /pular.")
+        return State.ADD_DESCRIPTION
+
+    await query.edit_message_text("Opcao invalida. Digite /add para iniciar novamente.")
+    context.user_data.pop("guided", None)
+    return ConversationHandler.END
+
+
+async def receive_new_add_category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     category = update.message.text.strip().lower()
     if not category:
         await update.message.reply_text("Informe uma categoria. Exemplo: alimentacao")
-        return State.ADD_CATEGORY
+        return State.ADD_NEW_CATEGORY
 
     context.user_data["guided"]["category"] = category
     await update.message.reply_text("Descricao opcional? Envie um texto ou digite /pular.")
@@ -89,26 +155,65 @@ async def receive_add_category(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def receive_add_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await _save_guided_expense(update, context, update.message.text.strip() or None)
+    context.user_data["guided"]["description"] = update.message.text.strip() or None
+    await _send_expense_confirmation(update, context)
+    return State.ADD_CONFIRM
 
 
-async def _save_guided_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, description: str | None) -> int:
+async def _send_expense_confirmation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    data = context.user_data["guided"]
+    description = data.get("description") or "sem descricao"
+    await update.message.reply_text(
+        "\n".join(
+            [
+                "Confirmar gasto?",
+                "",
+                f"Valor: {format_currency(float(data['amount']))}",
+                f"Categoria: {data['category']}",
+                f"Descricao: {description}",
+            ]
+        ),
+        reply_markup=build_expense_confirmation_keyboard(),
+    )
+
+
+async def confirm_add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == CANCEL_EXPENSE_CALLBACK:
+        context.user_data.pop("guided", None)
+        await query.edit_message_text("Fluxo cancelado. Nenhum gasto foi salvo.")
+        return ConversationHandler.END
+
+    if query.data != CONFIRM_EXPENSE_CALLBACK:
+        await query.edit_message_text("Opcao invalida. Digite /add para iniciar novamente.")
+        context.user_data.pop("guided", None)
+        return ConversationHandler.END
+
     data = context.user_data.pop("guided")
     parsed = ParsedExpense(
         amount=data["amount"],
         category=data["category"],
-        description=description,
+        description=data.get("description"),
     )
 
     with SessionLocal() as db:
-        expense = ExpenseService(ExpenseRepository(db)).add_expense(data["user_id"], parsed)
+        repository = ExpenseRepository(db)
+        expense = ExpenseService(repository).add_expense(data["user_id"], parsed)
+        summary = ReportService(repository).get_current_month_summary(data["user_id"])
 
-    await update.message.reply_text(format_expense_saved(expense, "registrado"))
+    await query.edit_message_text(
+        f"{format_expense_saved(expense, 'registrado')}\n"
+        f"Total gasto no mes: {format_currency(float(summary['total']))}."
+    )
     return ConversationHandler.END
 
 
 async def skip_add_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await _save_guided_expense(update, context, None)
+    context.user_data["guided"]["description"] = None
+    await _send_expense_confirmation(update, context)
+    return State.ADD_CONFIRM
 
 
 async def start_income(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -274,10 +379,20 @@ def build_conversation_handlers() -> list[ConversationHandler]:
             entry_points=[CommandHandler("add", start_add_expense)],
             states={
                 State.ADD_AMOUNT: [MessageHandler(text_filter, receive_add_amount)],
-                State.ADD_CATEGORY: [MessageHandler(text_filter, receive_add_category)],
+                State.ADD_CATEGORY: [
+                    CallbackQueryHandler(choose_add_category, pattern=f"^{CATEGORY_PREFIX}:"),
+                    MessageHandler(text_filter, receive_add_category),
+                ],
+                State.ADD_NEW_CATEGORY: [MessageHandler(text_filter, receive_new_add_category)],
                 State.ADD_DESCRIPTION: [
                     CommandHandler("pular", skip_add_description),
                     MessageHandler(text_filter, receive_add_description),
+                ],
+                State.ADD_CONFIRM: [
+                    CallbackQueryHandler(
+                        confirm_add_expense,
+                        pattern=f"^({CONFIRM_EXPENSE_CALLBACK}|{CANCEL_EXPENSE_CALLBACK})$",
+                    )
                 ],
             },
             fallbacks=[CommandHandler("cancelar", cancel_conversation)],

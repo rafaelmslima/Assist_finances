@@ -1,7 +1,7 @@
 from collections.abc import Generator
 import logging
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_database_url
@@ -26,6 +26,7 @@ def init_db() -> None:
     if database_url.startswith("sqlite"):
         logger.info("Usando SQLite local; criando tabelas automaticamente se necessario.")
         Base.metadata.create_all(bind=engine)
+        _ensure_sqlite_schema()
         return
 
     logger.info("Banco PostgreSQL detectado; executando migrations Alembic.")
@@ -49,3 +50,14 @@ def _run_alembic_upgrade() -> None:
 
     alembic_cfg = Config("alembic.ini")
     command.upgrade(alembic_cfg, "head")
+
+
+def _ensure_sqlite_schema() -> None:
+    inspector = inspect(engine)
+    if "users" in inspector.get_table_names():
+        user_columns = {column["name"] for column in inspector.get_columns("users")}
+        if "receive_updates_notifications" not in user_columns:
+            with engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE users ADD COLUMN receive_updates_notifications BOOLEAN NOT NULL DEFAULT 1")
+                )
