@@ -10,7 +10,8 @@ from app.bot.handlers import (
     add_income,
     balance,
     broadcast,
-    category_chart,
+    chart_callback,
+    chart_menu,
     compare_months,
     day_summary,
     delete_expense,
@@ -49,7 +50,7 @@ DEFAULT_BOT_COMMANDS = [
     BotCommand("mes", "Ver resumo de gastos do mes"),
     BotCommand("hoje", "Ver gastos de hoje"),
     BotCommand("dia", "Ver gastos de um dia especifico"),
-    BotCommand("grafico", "Ver grafico por categoria"),
+    BotCommand("grafico", "Abrir menu de graficos financeiros"),
     BotCommand("edit", "Editar um gasto pelo ID"),
     BotCommand("delete", "Apagar um gasto pelo ID"),
     BotCommand("receita", "Adicionar uma receita"),
@@ -111,7 +112,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("mes", month_summary))
     application.add_handler(CommandHandler("hoje", today_summary))
     application.add_handler(CommandHandler("dia", day_summary))
-    application.add_handler(CommandHandler("grafico", category_chart))
+    application.add_handler(CommandHandler("grafico", chart_menu))
     application.add_handler(CommandHandler("edit", edit_expense))
     application.add_handler(CommandHandler("delete", delete_expense))
     application.add_handler(CommandHandler(["receita", "receitas"], add_income))
@@ -126,6 +127,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("updates_off", updates_off))
     application.add_handler(CommandHandler("updates_on", updates_on))
     application.add_handler(CommandHandler("cancelar", cancel_conversation))
+    application.add_handler(CallbackQueryHandler(chart_callback, pattern="^chart:"))
     application.add_handler(CallbackQueryHandler(tutorial_callback, pattern="^tutorial:"))
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
     application.add_error_handler(error_handler)

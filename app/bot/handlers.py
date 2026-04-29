@@ -1,6 +1,13 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from app.bot.keyboards import (
+    CHART_BACK_CALLBACK,
+    CHART_CLOSE_CALLBACK,
+    CHART_PREFIX,
+    build_chart_menu_keyboard,
+    build_chart_result_keyboard,
+)
 from app.bot.commands import (
     HELP_TEXT,
     START_TEXT,
@@ -30,12 +37,12 @@ from app.database.models import User
 from app.services.analytics_service import AnalyticsService
 from app.services.broadcast_service import BroadcastService
 from app.services.budget_service import BudgetService
+from app.services.chart_report_service import ChartReportService
 from app.services.expense_service import ExpenseService
 from app.services.fixed_expense_service import FixedExpenseService
 from app.services.income_service import IncomeService
 from app.services.report_service import ReportService
 from app.services.user_service import TelegramUserData, UnauthorizedUserError, UserService
-from app.utils.charts import build_category_chart
 from app.utils.validators import (
     ExpenseValidationError,
     parse_add_command,
@@ -69,15 +76,18 @@ def _telegram_user_data(update: Update) -> TelegramUserData | None:
 
 async def _get_or_register_user(update: Update) -> User | None:
     data = _telegram_user_data(update)
+    message = update.effective_message
     if not data:
-        await update.message.reply_text("Nao consegui identificar seu usuario no Telegram.")
+        if message:
+            await message.reply_text("Nao consegui identificar seu usuario no Telegram.")
         return None
 
     try:
         with SessionLocal() as db:
             return UserService(UserRepository(db)).register_or_update_from_telegram(data)
     except UnauthorizedUserError:
-        await update.message.reply_text(UNAUTHORIZED_TEXT)
+        if message:
+            await message.reply_text(UNAUTHORIZED_TEXT)
         return None
 
 
@@ -383,22 +393,61 @@ async def day_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await update.message.reply_text(format_day_summary(summary))
 
 
-async def category_chart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def chart_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = await _get_or_register_user(update)
     if not user:
         return
 
-    with SessionLocal() as db:
-        repository = ExpenseRepository(db)
-        summary = ReportService(repository).get_current_month_summary(user.id)
+    await update.message.reply_text(
+        "Que gráfico você quer ver?",
+        reply_markup=build_chart_menu_keyboard(),
+    )
 
-    categories = summary["categories"]
-    if not categories:
-        await update.message.reply_text("Voce ainda nao registrou gastos neste mes.")
+
+async def chart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    if not query:
         return
 
-    chart = build_category_chart(categories)
-    await update.message.reply_photo(photo=chart, caption="Percentual por categoria no mes atual")
+    await query.answer()
+    data = query.data or ""
+
+    if data == CHART_CLOSE_CALLBACK:
+        await query.edit_message_text("Menu de gráficos fechado.")
+        return
+
+    if data == CHART_BACK_CALLBACK:
+        await query.edit_message_text(
+            "Que gráfico você quer ver?",
+            reply_markup=build_chart_menu_keyboard(),
+        )
+        return
+
+    if not data.startswith(f"{CHART_PREFIX}:show:"):
+        await query.edit_message_text("Opcao de grafico invalida.")
+        return
+
+    user = await _get_or_register_user(update)
+    if not user:
+        return
+
+    chart_type = data.rsplit(":", 1)[1]
+    with SessionLocal() as db:
+        report = ChartReportService(
+            ExpenseRepository(db),
+            BudgetRepository(db),
+            FixedExpenseRepository(db),
+        ).build(user.id, chart_type)
+
+    if report.chart:
+        await query.message.reply_photo(photo=report.chart, caption=report.text)
+    else:
+        await query.message.reply_text(report.text)
+
+    await query.message.reply_text(
+        "O que deseja fazer agora?",
+        reply_markup=build_chart_result_keyboard(),
+    )
 
 
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

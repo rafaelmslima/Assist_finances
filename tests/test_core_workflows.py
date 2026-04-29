@@ -1,7 +1,8 @@
 import asyncio
 import os
 import unittest
-from datetime import date
+from datetime import date, datetime
+from io import BytesIO
 from unittest.mock import patch
 
 from sqlalchemy import create_engine, event, select
@@ -24,6 +25,9 @@ from app.database.repository import (
 from app.database.models import UpdateBroadcast
 from app.services.broadcast_service import BroadcastService
 from app.services.budget_service import BudgetService
+import app.services.chart_report_service as chart_reports
+from app.services.chart_report_service import BUDGET_EMPTY_MESSAGE, ChartReportService
+from app.services.date_service import month_range, previous_month
 from app.services.expense_service import ExpenseService
 from app.services.fixed_expense_service import FixedExpenseService
 from app.services.income_service import IncomeService
@@ -198,6 +202,101 @@ class RepositoryWorkflowTest(unittest.TestCase):
             self.assertEqual(broadcast.sent_count, 1)
             self.assertEqual(broadcast.failed_count, 1)
 
+    def test_chart_reports_handle_empty_budget_fixed_and_user_scope(self):
+        owner = self._create_user(801)
+        other = self._create_user(802)
+
+        with self.Session() as db:
+            expense_service = ExpenseService(ExpenseRepository(db))
+            owner_expense = expense_service.add_expense(
+                owner.id,
+                ParsedExpense(amount=120, category="mercado", description="feira"),
+            )
+            other_expense = expense_service.add_expense(
+                other.id,
+                ParsedExpense(amount=999, category="viagem", description=None),
+            )
+
+            owner_expense.created_at = datetime.now()
+            other_expense.created_at = datetime.now()
+            db.commit()
+
+            charts = ChartReportService(
+                ExpenseRepository(db),
+                BudgetRepository(db),
+                FixedExpenseRepository(db),
+            )
+
+            with _patched_chart_renderers():
+                category_report = charts.category(owner.id)
+            budget_report = charts.budget_vs_spent(owner.id)
+            fixed_report = charts.fixed_vs_variable(owner.id)
+
+        self.assertIsNotNone(category_report.chart)
+        self.assertIn("mercado", category_report.text)
+        self.assertNotIn("viagem", category_report.text)
+        self.assertIsNone(budget_report.chart)
+        self.assertEqual(budget_report.text, BUDGET_EMPTY_MESSAGE)
+        self.assertIsNone(fixed_report.chart)
+        self.assertIn("gastos fixos", fixed_report.text)
+
+    def test_chart_reports_cover_budget_fixed_daily_top_and_month_comparison(self):
+        user = self._create_user(803)
+        current_start, _ = month_range()
+        previous_start, _ = month_range(previous_month())
+
+        with self.Session() as db:
+            expense_service = ExpenseService(ExpenseRepository(db))
+            current_food = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=200, category="alimentacao", description="mercado"),
+            )
+            current_transport = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=80, category="transporte", description="metro"),
+            )
+            previous_food = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=100, category="alimentacao", description=None),
+            )
+            current_food.created_at = current_start.replace(day=3)
+            current_transport.created_at = current_start.replace(day=10)
+            previous_food.created_at = previous_start.replace(day=5)
+
+            BudgetService(BudgetRepository(db), ExpenseRepository(db)).set_budget(
+                user.id,
+                ParsedBudget(amount=150, category="alimentacao"),
+            )
+            FixedExpenseService(FixedExpenseRepository(db)).add_fixed_expense(
+                user.id,
+                ParsedFixedExpense(amount=900, category="moradia", description="aluguel"),
+            )
+            db.commit()
+
+            charts = ChartReportService(
+                ExpenseRepository(db),
+                BudgetRepository(db),
+                FixedExpenseRepository(db),
+            )
+
+            with _patched_chart_renderers():
+                daily_report = charts.daily_evolution(user.id)
+                top_report = charts.top_expenses(user.id)
+                comparison_report = charts.month_comparison(user.id)
+                budget_report = charts.budget_vs_spent(user.id)
+                fixed_report = charts.fixed_vs_variable(user.id)
+
+        self.assertIsNotNone(daily_report.chart)
+        self.assertIn("Maior gasto: dia 03", daily_report.text)
+        self.assertIsNotNone(top_report.chart)
+        self.assertIn("alimentacao", top_report.text)
+        self.assertIsNotNone(comparison_report.chart)
+        self.assertIn("Mes anterior", comparison_report.text)
+        self.assertIsNotNone(budget_report.chart)
+        self.assertIn("Categorias acima do limite", budget_report.text)
+        self.assertIsNotNone(fixed_report.chart)
+        self.assertIn("Fixos previstos", fixed_report.text)
+
 
 class SchedulerWorkflowTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -245,6 +344,22 @@ class SchedulerWorkflowTest(unittest.TestCase):
             sent_on = date.today()
             self.assertFalse(notifications.was_sent(self.first_user.id, sent_on))
             self.assertTrue(notifications.was_sent(self.second_user.id, sent_on))
+
+
+def _fake_chart(*_args, **_kwargs):
+    return BytesIO(b"chart")
+
+
+def _patched_chart_renderers():
+    return patch.multiple(
+        chart_reports,
+        build_budget_chart=_fake_chart,
+        build_category_chart=_fake_chart,
+        build_daily_evolution_chart=_fake_chart,
+        build_fixed_variable_chart=_fake_chart,
+        build_month_comparison_chart=_fake_chart,
+        build_top_expenses_chart=_fake_chart,
+    )
 
 
 if __name__ == "__main__":

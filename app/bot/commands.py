@@ -13,7 +13,7 @@ Comandos disponiveis:
 /hoje - lista os gastos de hoje
 /dia 15 - lista os gastos de um dia do mes atual
 /dia 22/04/2026 - lista os gastos de uma data especifica
-/grafico - envia um grafico de pizza por categoria
+/grafico - abre menu de graficos financeiros
 /edit id valor categoria descricao opcional - edita um gasto
 /delete id - apaga um gasto
 /receita - inicia cadastro guiado de receita
@@ -56,7 +56,7 @@ Resumo e consultas:
 /hoje - lista os gastos de hoje
 /dia 15 - lista os gastos do dia 15 do mes atual
 /dia 22/04/2026 - lista os gastos dessa data
-/grafico - grafico de pizza com percentual por categoria no mes atual
+/grafico - abre menu com graficos por categoria, evolucao, top gastos e mais
 
 Receitas, saldo e planejamento:
 /receita
