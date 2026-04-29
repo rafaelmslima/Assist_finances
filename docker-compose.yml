@@ -1,0 +1,13 @@
+services:
+  finance-bot:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - finance_bot_data:/app/data
+    environment:
+      DATABASE_URL: sqlite:////app/data/finance_bot.db
+
+volumes:
+  finance_bot_data:

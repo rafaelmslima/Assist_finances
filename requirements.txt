@@ -1,0 +1,7 @@
+python-telegram-bot==21.6
+SQLAlchemy==2.0.35
+alembic==1.13.3
+psycopg[binary]==3.2.3
+matplotlib==3.9.2
+python-dotenv==1.0.1
+APScheduler==3.10.4
