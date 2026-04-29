@@ -1,6 +1,7 @@
 import logging
 
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from app.bot.handlers import (
     add_expense,
@@ -22,7 +23,7 @@ from app.bot.handlers import (
     today_summary,
     unknown_command,
 )
-from app.config import get_settings
+from app.config import get_database_url, get_settings
 from app.database.session import init_db
 from app.scheduler import start_daily_scheduler
 
@@ -32,9 +33,19 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
 )
 
+logger = logging.getLogger(__name__)
+
 
 async def post_init(application: Application) -> None:
     start_daily_scheduler(application)
+
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.exception("Erro nao tratado no bot", exc_info=context.error)
+    if isinstance(update, Update) and update.effective_message:
+        await update.effective_message.reply_text(
+            "Tive um erro interno ao processar esse comando. Tente novamente em instantes."
+        )
 
 
 def build_application() -> Application:
@@ -64,13 +75,17 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("fixos", fixed_expenses))
     application.add_handler(CommandHandler("delete_fixo", delete_fixed_expense))
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
+    application.add_error_handler(error_handler)
 
     return application
 
 
 def main() -> None:
+    database_backend = "sqlite" if get_database_url().startswith("sqlite") else "postgresql"
+    logger.info("Iniciando Finance Bot com banco %s.", database_backend)
     init_db()
     application = build_application()
+    logger.info("Polling do Telegram iniciando.")
     application.run_polling()
 
 

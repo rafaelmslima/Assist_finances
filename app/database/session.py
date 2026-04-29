@@ -24,10 +24,12 @@ if database_url.startswith("sqlite"):
 
 def init_db() -> None:
     if database_url.startswith("sqlite"):
+        logger.info("Usando SQLite local; criando tabelas automaticamente se necessario.")
         Base.metadata.create_all(bind=engine)
         return
 
-    logger.info("Banco nao-SQLite detectado; execute migrations Alembic antes de iniciar o bot.")
+    logger.info("Banco PostgreSQL detectado; executando migrations Alembic.")
+    _run_alembic_upgrade()
 
 
 def get_db_session() -> Generator[Session, None, None]:
@@ -36,3 +38,14 @@ def get_db_session() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def _run_alembic_upgrade() -> None:
+    try:
+        from alembic import command
+        from alembic.config import Config
+    except ImportError as exc:
+        raise RuntimeError("Alembic nao esta instalado. Rode `pip install -r requirements.txt`.") from exc
+
+    alembic_cfg = Config("alembic.ini")
+    command.upgrade(alembic_cfg, "head")

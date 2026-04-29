@@ -153,10 +153,10 @@ Nunca versionar `.env`, bancos SQLite locais ou arquivos de ambiente real.
 
 Para ambiente local simples com SQLite, o bot cria as tabelas automaticamente ao iniciar quando `DATABASE_URL` esta vazia.
 
-Para ambientes compartilhados ou deploy com PostgreSQL, use Alembic. No Railway, o start command ja executa:
+Para ambientes compartilhados ou deploy com PostgreSQL, use Alembic. No Railway, o bot executa as migrations automaticamente ao iniciar quando detecta PostgreSQL:
 
 ```bash
-alembic upgrade head && python main.py
+python main.py
 ```
 
 Para rodar migrations manualmente:
@@ -237,8 +237,8 @@ O bot usa polling, entao nao precisa expor porta HTTP. O processo deve ficar rod
 
 Arquivos de start incluidos:
 
-- `Procfile`: `worker: alembic upgrade head && python main.py`
-- `railway.json`: define `startCommand` como `alembic upgrade head && python main.py` e restart em falha.
+- `Procfile`: `worker: python main.py`
+- `railway.json`: define `startCommand` como `python main.py` e restart em falha.
 
 ### 1. Subir o projeto para o GitHub
 
@@ -250,7 +250,7 @@ Confirme que `.env`, bancos SQLite e `.venv` nao foram versionados. O `.gitignor
 2. Crie um novo projeto.
 3. Escolha deploy a partir do GitHub.
 4. Selecione o repositorio do `finance_bot`.
-5. Se o Railway pedir um comando de start manual, use `alembic upgrade head && python main.py`.
+5. Se o Railway pedir um comando de start manual, use `python main.py`.
 
 ### 3. Adicionar PostgreSQL no Railway
 
@@ -293,10 +293,10 @@ O projeto converte automaticamente `postgres://` e `postgresql://` para `postgre
 
 SQLite em Railway serve apenas para teste rapido. O filesystem pode ser efemero; em redeploy, restart ou recriacao do container, o arquivo `finance_bot.db` pode ser perdido.
 
-Para um teste online mais confiavel, use PostgreSQL no Railway. O start command ja roda as migrations antes de iniciar o bot:
+Para um teste online mais confiavel, use PostgreSQL no Railway. O app roda as migrations automaticamente antes de iniciar o polling:
 
 ```bash
-alembic upgrade head && python main.py
+python main.py
 ```
 
 Se quiser rodar migrations manualmente antes do deploy, rode localmente apontando `DATABASE_URL` para o banco remoto ou use um shell/job temporario no Railway:
