@@ -9,6 +9,10 @@ class AlertService:
 
         total_budget = analysis.get("total_budget")
         total_forecast = float(analysis.get("total_forecast") or 0)
+        current_budget_usage_percent = analysis.get("current_budget_usage_percent")
+        if current_budget_usage_percent is not None and float(current_budget_usage_percent) >= 80:
+            alerts.append("Voce ja usou mais de 80% do seu orcamento mensal.")
+
         if total_budget and total_forecast > float(total_budget):
             alerts.append("A previsao ultrapassa o orcamento mensal.")
 

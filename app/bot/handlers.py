@@ -14,6 +14,7 @@ from app.bot.commands import (
     format_balance,
     format_budget_saved,
     format_comparison,
+    format_available_daily,
     format_day_summary,
     format_expense_saved,
     format_fixed_expense_saved,
@@ -22,6 +23,7 @@ from app.bot.commands import (
     format_broadcast_result,
     format_income_saved,
     format_month_summary,
+    format_smart_summary,
 )
 from app.config import get_settings
 from app.database.repository import (
@@ -53,6 +55,7 @@ from app.utils.validators import (
     parse_fixed_expense_command,
     parse_fixed_expense_id,
     parse_income_command,
+    validate_broadcast_message,
 )
 
 
@@ -112,9 +115,10 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(BROADCAST_PERMISSION_DENIED_TEXT)
         return
 
-    message = " ".join(context.args).strip()
-    if not message:
-        await update.message.reply_text("Use: /broadcast mensagem")
+    try:
+        message = validate_broadcast_message(" ".join(context.args))
+    except ExpenseValidationError as exc:
+        await update.message.reply_text(str(exc))
         return
 
     with SessionLocal() as db:
@@ -204,6 +208,40 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         summary = analytics.get_balance(user.id)
 
     await update.message.reply_text(format_balance(summary))
+
+
+async def available_daily(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = await _get_or_register_user(update)
+    if not user:
+        return
+
+    with SessionLocal() as db:
+        analytics = AnalyticsService(
+            ExpenseRepository(db),
+            IncomeRepository(db),
+            BudgetRepository(db),
+            FixedExpenseRepository(db),
+        )
+        available = analytics.get_available_daily_amount(user.id)
+
+    await update.message.reply_text(format_available_daily(available))
+
+
+async def smart_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = await _get_or_register_user(update)
+    if not user:
+        return
+
+    with SessionLocal() as db:
+        analytics = AnalyticsService(
+            ExpenseRepository(db),
+            IncomeRepository(db),
+            BudgetRepository(db),
+            FixedExpenseRepository(db),
+        )
+        summary = analytics.get_smart_summary(user.id)
+
+    await update.message.reply_text(format_smart_summary(summary))
 
 
 async def set_budget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

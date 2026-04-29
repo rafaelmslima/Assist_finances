@@ -1,5 +1,6 @@
 from app.database.models import FixedExpense
 from app.database.repository import FixedExpenseRepository
+from app.utils.money import ZERO, to_money
 from app.utils.validators import ParsedFixedExpense
 
 
@@ -21,7 +22,7 @@ class FixedExpenseService:
 
     def list_fixed_expenses(self, user_id: int) -> dict[str, object]:
         fixed_expenses = self.repository.list_by_user(user_id)
-        total = round(sum(item.amount for item in fixed_expenses), 2)
+        total = to_money(sum((item.amount for item in fixed_expenses), ZERO))
         return {"fixed_expenses": fixed_expenses, "total": total}
 
     def delete_fixed_expense(self, user_id: int, fixed_expense_id: int) -> bool:

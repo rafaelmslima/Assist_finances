@@ -8,6 +8,7 @@ from app.bot.handlers import (
     add_expense,
     add_fixed_expense,
     add_income,
+    available_daily,
     balance,
     broadcast,
     chart_callback,
@@ -22,6 +23,7 @@ from app.bot.handlers import (
     help_command,
     month_summary,
     set_budget,
+    smart_summary,
     start,
     today_summary,
     unknown_command,
@@ -55,6 +57,8 @@ DEFAULT_BOT_COMMANDS = [
     BotCommand("delete", "Apagar um gasto pelo ID"),
     BotCommand("receita", "Adicionar uma receita"),
     BotCommand("saldo", "Ver saldo atual e projetado"),
+    BotCommand("disponivel", "Ver quanto pode gastar por dia"),
+    BotCommand("resumo", "Ver dashboard financeiro resumido"),
     BotCommand("orcamento", "Definir orcamento mensal ou por categoria"),
     BotCommand("previsao", "Ver previsao de gastos do mes"),
     BotCommand("comparar", "Comparar mes atual com anterior"),
@@ -117,6 +121,8 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("delete", delete_expense))
     application.add_handler(CommandHandler(["receita", "receitas"], add_income))
     application.add_handler(CommandHandler("saldo", balance))
+    application.add_handler(CommandHandler("disponivel", available_daily))
+    application.add_handler(CommandHandler("resumo", smart_summary))
     application.add_handler(CommandHandler("orcamento", set_budget))
     application.add_handler(CommandHandler("previsao", forecast))
     application.add_handler(CommandHandler("comparar", compare_months))

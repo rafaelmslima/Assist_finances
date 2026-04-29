@@ -7,6 +7,7 @@ from app.database.models import Expense
 from app.database.repository import BudgetRepository, ExpenseRepository, FixedExpenseRepository
 from app.services.budget_service import BudgetService
 from app.services.date_service import elapsed_month_days, month_range, previous_month
+from app.utils.money import to_money
 
 
 BUDGET_EMPTY_MESSAGE = "\n".join(
@@ -58,7 +59,7 @@ class ChartReportService:
         if not categories:
             return ChartReport(chart=None, text="Voce ainda nao registrou gastos neste mes.")
 
-        total = round(sum(categories.values()), 2)
+        total = round(sum(float(value) for value in categories.values()), 2)
         lines = [
             "Resumo por categoria",
             f"Total do mes: {format_currency(total)}",
@@ -191,7 +192,7 @@ class ChartReportService:
 
         start_date, end_date = month_range()
         fixed_total = round(sum(float(item.amount) for item in fixed_expenses), 2)
-        variable_total = round(self.expense_repository.total_by_period(user_id, start_date, end_date), 2)
+        variable_total = round(float(self.expense_repository.total_by_period(user_id, start_date, end_date)), 2)
         month_total = fixed_total + variable_total
         committed_percent = round((fixed_total / month_total) * 100, 1) if month_total else 0
 
@@ -215,8 +216,8 @@ def _expense_payload(expense: Expense) -> dict[str, object]:
     }
 
 
-def format_currency(value: float) -> str:
-    return f"R$ {value:.2f}".replace(".", ",")
+def format_currency(value: object) -> str:
+    return f"R$ {to_money(value):.2f}".replace(".", ",")
 
 
 def build_category_chart(category_totals: dict[str, float]) -> BytesIO:

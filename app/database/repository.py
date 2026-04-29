@@ -1,9 +1,12 @@
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import Select, delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database.models import Budget, DailyNotification, Expense, FixedExpense, Income, UpdateBroadcast, User
+from app.utils.money import to_money
 
 
 def _month_key(target: date | datetime) -> str:
@@ -145,14 +148,14 @@ class ExpenseRepository:
     def create(
         self,
         user_id: int,
-        amount: float,
+        amount: Decimal | float | int | str,
         category: str,
         description: str | None = None,
     ) -> Expense:
         expense = Expense(
             user_id=user_id,
             telegram_user_id=_telegram_user_id_for_user_id(self.db, user_id),
-            amount=amount,
+            amount=to_money(amount),
             category=category,
             description=description,
         )
@@ -172,7 +175,7 @@ class ExpenseRepository:
         self,
         user_id: int,
         expense_id: int,
-        amount: float,
+        amount: Decimal | float | int | str,
         category: str,
         description: str | None,
     ) -> Expense | None:
@@ -180,7 +183,7 @@ class ExpenseRepository:
         if not expense:
             return None
 
-        expense.amount = amount
+        expense.amount = to_money(amount)
         expense.category = category
         expense.description = description
         self.db.commit()
@@ -218,7 +221,7 @@ class ExpenseRepository:
         user_id: int,
         start_date: datetime,
         end_date: datetime,
-    ) -> dict[str, float]:
+    ) -> dict[str, Decimal]:
         statement = (
             select(Expense.category, func.sum(Expense.amount))
             .where(
@@ -229,7 +232,7 @@ class ExpenseRepository:
             .group_by(Expense.category)
             .order_by(func.sum(Expense.amount).desc())
         )
-        return {category: float(total or 0) for category, total in self.db.execute(statement)}
+        return {category: to_money(total) for category, total in self.db.execute(statement)}
 
     def count_by_period(
         self,
@@ -249,13 +252,13 @@ class ExpenseRepository:
         user_id: int,
         start_date: datetime,
         end_date: datetime,
-    ) -> float:
+    ) -> Decimal:
         statement = select(func.sum(Expense.amount)).where(
             Expense.user_id == user_id,
             Expense.created_at >= start_date,
             Expense.created_at < end_date,
         )
-        return float(self.db.scalar(statement) or 0)
+        return to_money(self.db.scalar(statement))
 
     def list_distinct_categories(self, user_id: int) -> list[str]:
         statement = (
@@ -275,13 +278,13 @@ class IncomeRepository:
     def create(
         self,
         user_id: int,
-        amount: float,
+        amount: Decimal | float | int | str,
         description: str | None = None,
     ) -> Income:
         income = Income(
             user_id=user_id,
             telegram_user_id=_telegram_user_id_for_user_id(self.db, user_id),
-            amount=amount,
+            amount=to_money(amount),
             description=description,
         )
         self.db.add(income)
@@ -294,13 +297,13 @@ class IncomeRepository:
         user_id: int,
         start_date: datetime,
         end_date: datetime,
-    ) -> float:
+    ) -> Decimal:
         statement = select(func.sum(Income.amount)).where(
             Income.user_id == user_id,
             Income.created_at >= start_date,
             Income.created_at < end_date,
         )
-        return float(self.db.scalar(statement) or 0)
+        return to_money(self.db.scalar(statement))
 
 
 class BudgetRepository:
@@ -310,7 +313,7 @@ class BudgetRepository:
     def upsert(
         self,
         user_id: int,
-        amount: float,
+        amount: Decimal | float | int | str,
         category: str | None,
         target_date: date | None = None,
     ) -> Budget:
@@ -322,14 +325,14 @@ class BudgetRepository:
         )
         budget = self.db.scalar(statement)
         if budget:
-            budget.amount = amount
+            budget.amount = to_money(amount)
         else:
             budget = Budget(
                 user_id=user_id,
                 telegram_user_id=_telegram_user_id_for_user_id(self.db, user_id),
                 month=month,
                 category=category,
-                amount=amount,
+                amount=to_money(amount),
             )
             self.db.add(budget)
 
@@ -355,14 +358,14 @@ class BudgetRepository:
         )
         return self.db.scalar(statement)
 
-    def get_category_budgets(self, user_id: int, target_date: date | None = None) -> dict[str, float]:
+    def get_category_budgets(self, user_id: int, target_date: date | None = None) -> dict[str, Decimal]:
         month = _month_key(target_date or date.today())
         statement = select(Budget.category, Budget.amount).where(
             Budget.user_id == user_id,
             Budget.month == month,
             Budget.category.is_not(None),
         )
-        return {str(category): float(amount) for category, amount in self.db.execute(statement)}
+        return {str(category): to_money(amount) for category, amount in self.db.execute(statement)}
 
 
 class FixedExpenseRepository:
@@ -372,14 +375,14 @@ class FixedExpenseRepository:
     def create(
         self,
         user_id: int,
-        amount: float,
+        amount: Decimal | float | int | str,
         category: str,
         description: str | None = None,
     ) -> FixedExpense:
         fixed_expense = FixedExpense(
             user_id=user_id,
             telegram_user_id=_telegram_user_id_for_user_id(self.db, user_id),
-            amount=amount,
+            amount=to_money(amount),
             category=category,
             description=description,
         )
@@ -396,11 +399,11 @@ class FixedExpenseRepository:
         )
         return list(self.db.scalars(statement).all())
 
-    def total_by_user(self, user_id: int) -> float:
+    def total_by_user(self, user_id: int) -> Decimal:
         statement = select(func.sum(FixedExpense.amount)).where(
             FixedExpense.user_id == user_id,
         )
-        return float(self.db.scalar(statement) or 0)
+        return to_money(self.db.scalar(statement))
 
     def delete(self, user_id: int, fixed_expense_id: int) -> bool:
         statement = delete(FixedExpense).where(
@@ -424,8 +427,9 @@ class DailyNotificationRepository:
         return bool(self.db.scalar(statement))
 
     def mark_sent(self, user_id: int, sent_on: date) -> None:
-        if self.was_sent(user_id, sent_on):
-            return
+        self.try_mark_sent(user_id, sent_on)
+
+    def try_mark_sent(self, user_id: int, sent_on: date) -> bool:
         self.db.add(
             DailyNotification(
                 user_id=user_id,
@@ -433,4 +437,17 @@ class DailyNotificationRepository:
                 sent_on=sent_on,
             )
         )
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            return False
+        return True
+
+    def clear_sent_marker(self, user_id: int, sent_on: date) -> None:
+        statement = delete(DailyNotification).where(
+            DailyNotification.user_id == user_id,
+            DailyNotification.sent_on == sent_on,
+        )
+        self.db.execute(statement)
         self.db.commit()

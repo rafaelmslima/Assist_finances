@@ -1,8 +1,21 @@
 from datetime import date
+from decimal import Decimal
 
 from app.database.repository import BudgetRepository, ExpenseRepository, FixedExpenseRepository, IncomeRepository
 from app.services.alert_service import AlertService
-from app.services.date_service import days_in_month, elapsed_month_days, month_range, previous_month
+from app.services.date_service import (
+    days_in_month,
+    elapsed_month_days,
+    month_range,
+    previous_month,
+    remaining_month_days,
+)
+from app.utils.money import ZERO, to_money
+
+
+TREND_HIGH_RATIO = Decimal("1.20")
+TREND_LOW_RATIO = Decimal("0.80")
+CATEGORY_BUDGET_WARNING_RATIO = Decimal("0.90")
 
 
 class AnalyticsService:
@@ -25,14 +38,14 @@ class AnalyticsService:
         monthly_income = self.income_repository.total_by_period(telegram_user_id, start_date, end_date)
         monthly_expenses = self.expense_repository.total_by_period(telegram_user_id, start_date, end_date)
         fixed_expenses = self.fixed_expense_repository.total_by_user(telegram_user_id)
-        current_balance = round(monthly_income - monthly_expenses, 2)
-        projected_balance = round(current_balance - fixed_expenses, 2)
+        current_balance = to_money(monthly_income - monthly_expenses)
+        projected_balance = to_money(current_balance - fixed_expenses)
 
         return {
             "current_balance": current_balance,
-            "monthly_income": round(monthly_income, 2),
-            "monthly_expenses": round(monthly_expenses, 2),
-            "fixed_expenses": round(fixed_expenses, 2),
+            "monthly_income": to_money(monthly_income),
+            "monthly_expenses": to_money(monthly_expenses),
+            "fixed_expenses": to_money(fixed_expenses),
             "projected_balance": projected_balance,
         }
 
@@ -51,6 +64,11 @@ class AnalyticsService:
         projected_variable_expenses = current_daily_average * days_in_month(target_date)
         total_forecast = projected_variable_expenses + fixed_expenses
         projected_balance = monthly_income - total_forecast
+        current_budget_usage_percent = (
+            round((float(current_total) / float(total_budget.amount)) * 100, 1)
+            if total_budget and total_budget.amount > 0
+            else None
+        )
 
         historical_category_averages = self._historical_category_daily_averages(
             telegram_user_id,
@@ -63,15 +81,16 @@ class AnalyticsService:
             target_date,
         )
         analysis = {
-            "historical_daily_average": round(historical_daily_average, 2),
-            "current_daily_average": round(current_daily_average, 2),
-            "projected_variable_expenses": round(projected_variable_expenses, 2),
-            "fixed_expenses": round(fixed_expenses, 2),
-            "total_forecast": round(total_forecast, 2),
-            "total_budget": float(total_budget.amount) if total_budget else None,
-            "budget_difference": round((float(total_budget.amount) - total_forecast), 2) if total_budget else None,
-            "monthly_income": round(monthly_income, 2),
-            "projected_balance": round(projected_balance, 2),
+            "historical_daily_average": to_money(historical_daily_average),
+            "current_daily_average": to_money(current_daily_average),
+            "projected_variable_expenses": to_money(projected_variable_expenses),
+            "fixed_expenses": to_money(fixed_expenses),
+            "total_forecast": to_money(total_forecast),
+            "total_budget": total_budget.amount if total_budget else None,
+            "current_budget_usage_percent": current_budget_usage_percent,
+            "budget_difference": to_money(total_budget.amount - total_forecast) if total_budget else None,
+            "monthly_income": to_money(monthly_income),
+            "projected_balance": to_money(projected_balance),
             "trend": self._trend(historical_daily_average, current_daily_average),
             "category_alerts": category_alerts,
             "top_categories": [category for category, _ in sorted(current_categories.items(), key=lambda item: item[1], reverse=True)],
@@ -79,6 +98,79 @@ class AnalyticsService:
         analysis["alerts"] = self.alert_service.build_alerts(analysis)
         analysis["suggestion"] = self.alert_service.build_suggestion(analysis)
         return analysis
+
+    def get_available_daily_amount(
+        self,
+        telegram_user_id: int,
+        target_date: date | None = None,
+    ) -> dict[str, object]:
+        target_date = target_date or date.today()
+        start_date, end_date = month_range(target_date)
+        monthly_income = self.income_repository.total_by_period(telegram_user_id, start_date, end_date)
+        monthly_expenses = self.expense_repository.total_by_period(telegram_user_id, start_date, end_date)
+        fixed_expenses = self.fixed_expense_repository.total_by_user(telegram_user_id)
+        days_remaining = remaining_month_days(target_date)
+        historical_daily_average = self._historical_daily_average(telegram_user_id, target_date)
+        current_daily_average = monthly_expenses / elapsed_month_days(target_date)
+        daily_excess = max(current_daily_average - historical_daily_average, ZERO) if historical_daily_average > 0 else ZERO
+        remaining_balance = monthly_income - monthly_expenses - fixed_expenses
+        daily_amount = (remaining_balance / days_remaining) - daily_excess
+
+        return {
+            "daily_amount": to_money(daily_amount),
+            "remaining_balance": to_money(remaining_balance),
+            "days_remaining": days_remaining,
+            "monthly_income": to_money(monthly_income),
+            "monthly_expenses": to_money(monthly_expenses),
+            "fixed_expenses": to_money(fixed_expenses),
+            "historical_daily_average": to_money(historical_daily_average),
+            "current_daily_average": to_money(current_daily_average),
+            "trend": self._trend_label(historical_daily_average, current_daily_average),
+        }
+
+    def get_smart_summary(
+        self,
+        telegram_user_id: int,
+        target_date: date | None = None,
+    ) -> dict[str, object]:
+        target_date = target_date or date.today()
+        start_date, end_date = month_range(target_date)
+        monthly_income = self.income_repository.total_by_period(telegram_user_id, start_date, end_date)
+        monthly_expenses = self.expense_repository.total_by_period(telegram_user_id, start_date, end_date)
+        fixed_expenses = self.fixed_expense_repository.total_by_user(telegram_user_id)
+        total_budget = self.budget_repository.get_total_budget(telegram_user_id, target_date)
+        current_balance = monthly_income - monthly_expenses
+        projected_balance = current_balance - fixed_expenses
+        historical_daily_average = self._historical_daily_average(telegram_user_id, target_date)
+        current_daily_average = monthly_expenses / elapsed_month_days(target_date)
+        budget_used_percent = (
+            round((float(monthly_expenses) / float(total_budget.amount)) * 100, 1)
+            if total_budget and total_budget.amount > 0
+            else None
+        )
+
+        analysis = {
+            "historical_daily_average": to_money(historical_daily_average),
+            "current_daily_average": to_money(current_daily_average),
+            "total_budget": total_budget.amount if total_budget else None,
+            "current_budget_usage_percent": budget_used_percent,
+            "total_forecast": to_money(
+                (current_daily_average * days_in_month(target_date)) + fixed_expenses,
+            ),
+            "fixed_expenses": to_money(fixed_expenses),
+            "monthly_income": to_money(monthly_income),
+            "projected_balance": to_money(projected_balance),
+            "category_alerts": [],
+        }
+
+        return {
+            "monthly_expenses": to_money(monthly_expenses),
+            "current_balance": to_money(current_balance),
+            "budget_used_percent": budget_used_percent,
+            "current_daily_average": to_money(current_daily_average),
+            "trend": self._short_trend_label(historical_daily_average, current_daily_average),
+            "alerts": self.alert_service.build_alerts(analysis),
+        }
 
     def compare_with_previous_month(self, telegram_user_id: int) -> dict[str, object]:
         current_start, current_end = month_range()
@@ -90,22 +182,22 @@ class AnalyticsService:
 
         categories = {}
         for category in sorted(set(current_categories) | set(previous_categories)):
-            current_value = float(current_categories.get(category, 0))
-            previous_value = float(previous_categories.get(category, 0))
+            current_value = current_categories.get(category, ZERO)
+            previous_value = previous_categories.get(category, ZERO)
             categories[category] = {
-                "current": round(current_value, 2),
-                "previous": round(previous_value, 2),
+                "current": to_money(current_value),
+                "previous": to_money(previous_value),
                 "percent": _change_percent(current_value, previous_value),
             }
 
         return {
-            "current_total": round(current_total, 2),
-            "previous_total": round(previous_total, 2),
+            "current_total": to_money(current_total),
+            "previous_total": to_money(previous_total),
             "total_percent": _change_percent(current_total, previous_total),
             "categories": categories,
         }
 
-    def _historical_daily_average(self, telegram_user_id: int, target_date: date) -> float:
+    def _historical_daily_average(self, telegram_user_id: int, target_date: date) -> Decimal:
         totals = []
         cursor = previous_month(target_date)
         for _ in range(3):
@@ -117,15 +209,15 @@ class AnalyticsService:
         if not totals:
             start_date, end_date = month_range(target_date)
             total = self.expense_repository.total_by_period(telegram_user_id, start_date, end_date)
-            return total / elapsed_month_days(target_date) if total > 0 else 0
-        return sum(totals) / len(totals)
+            return total / elapsed_month_days(target_date) if total > 0 else ZERO
+        return sum(totals, ZERO) / len(totals)
 
     def _historical_category_daily_averages(
         self,
         telegram_user_id: int,
         target_date: date,
-    ) -> dict[str, float]:
-        category_totals: dict[str, float] = {}
+    ) -> dict[str, Decimal]:
+        category_totals: dict[str, Decimal] = {}
         months_with_data: dict[str, int] = {}
         cursor = previous_month(target_date)
 
@@ -137,7 +229,7 @@ class AnalyticsService:
                 end_date,
             )
             for category, total in categories.items():
-                category_totals[category] = category_totals.get(category, 0) + (total / days_in_month(cursor))
+                category_totals[category] = category_totals.get(category, ZERO) + (total / days_in_month(cursor))
                 months_with_data[category] = months_with_data.get(category, 0) + 1
             cursor = previous_month(cursor)
 
@@ -148,43 +240,65 @@ class AnalyticsService:
         }
 
     @staticmethod
-    def _trend(historical_daily_average: float, current_daily_average: float) -> str:
+    def _trend(historical_daily_average: Decimal, current_daily_average: Decimal) -> str:
         if historical_daily_average <= 0 and current_daily_average <= 0:
             return "sem dados suficientes"
         if historical_daily_average <= 0:
             return "primeiros dados do usuario"
         ratio = current_daily_average / historical_daily_average
-        if ratio >= 1.2:
+        if ratio >= TREND_HIGH_RATIO:
             return "acima do padrao historico"
-        if ratio <= 0.8:
+        if ratio <= TREND_LOW_RATIO:
             return "abaixo do padrao historico"
         return "dentro do padrao historico"
 
+    @classmethod
+    def _trend_label(cls, historical_daily_average: Decimal, current_daily_average: Decimal) -> str:
+        trend = cls._trend(historical_daily_average, current_daily_average)
+        if trend == "acima do padrao historico":
+            return "acima do normal"
+        if trend == "abaixo do padrao historico":
+            return "abaixo do normal"
+        if trend == "dentro do padrao historico":
+            return "normal"
+        return trend
+
+    @classmethod
+    def _short_trend_label(cls, historical_daily_average: Decimal, current_daily_average: Decimal) -> str:
+        trend = cls._trend_label(historical_daily_average, current_daily_average)
+        if trend in {"acima do normal", "abaixo do normal"}:
+            return trend.split(" do normal")[0]
+        if trend == "primeiros dados do usuario":
+            return "normal"
+        if trend == "sem dados suficientes":
+            return "normal"
+        return trend
+
     @staticmethod
     def _category_alerts(
-        current_categories: dict[str, float],
-        category_budgets: dict[str, float],
-        historical_category_averages: dict[str, float],
+        current_categories: dict[str, Decimal],
+        category_budgets: dict[str, Decimal],
+        historical_category_averages: dict[str, Decimal],
         target_date: date,
     ) -> list[str]:
         alerts = []
         for category, budget in category_budgets.items():
-            spent = current_categories.get(category, 0)
-            if budget > 0 and spent >= budget * 0.9:
+            spent = current_categories.get(category, ZERO)
+            if budget > 0 and spent >= budget * CATEGORY_BUDGET_WARNING_RATIO:
                 alerts.append(f"A categoria {category} ja usou {round((spent / budget) * 100, 1)}% do orcamento.")
 
         elapsed_days = elapsed_month_days(target_date)
         for category, spent in current_categories.items():
-            historical_average = historical_category_averages.get(category, 0)
+            historical_average = historical_category_averages.get(category, ZERO)
             if historical_average <= 0:
                 continue
             current_average = spent / elapsed_days
-            if current_average >= historical_average * 1.2:
+            if current_average >= historical_average * TREND_HIGH_RATIO:
                 alerts.append(f"A categoria {category} esta pelo menos 20% acima do padrao historico.")
         return alerts
 
 
-def _change_percent(current_value: float, previous_value: float) -> float | None:
+def _change_percent(current_value: Decimal, previous_value: Decimal) -> float | None:
     if previous_value == 0:
         return None if current_value == 0 else 100.0
-    return round(((current_value - previous_value) / previous_value) * 100, 1)
+    return float(round(((current_value - previous_value) / previous_value) * 100, 1))

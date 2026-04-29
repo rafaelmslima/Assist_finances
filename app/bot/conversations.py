@@ -40,6 +40,8 @@ from app.utils.validators import (
     ParsedFixedExpense,
     ParsedIncome,
     parse_amount,
+    validate_category,
+    validate_description,
 )
 
 
@@ -144,9 +146,10 @@ async def choose_add_category(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def receive_new_add_category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    category = update.message.text.strip().lower()
-    if not category:
-        await update.message.reply_text("Informe uma categoria. Exemplo: alimentacao")
+    try:
+        category = validate_category(update.message.text, command="/add")
+    except ExpenseValidationError as exc:
+        await update.message.reply_text(str(exc))
         return State.ADD_NEW_CATEGORY
 
     context.user_data["guided"]["category"] = category
@@ -155,7 +158,11 @@ async def receive_new_add_category(update: Update, context: ContextTypes.DEFAULT
 
 
 async def receive_add_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["guided"]["description"] = update.message.text.strip() or None
+    try:
+        context.user_data["guided"]["description"] = validate_description(update.message.text.strip() or None)
+    except ExpenseValidationError as exc:
+        await update.message.reply_text(f"{exc}\n\nEnvie outra descricao ou digite /pular.")
+        return State.ADD_DESCRIPTION
     await _send_expense_confirmation(update, context)
     return State.ADD_CONFIRM
 
@@ -243,7 +250,12 @@ async def receive_income_amount(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def receive_income_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await _save_guided_income(update, context, update.message.text.strip() or None)
+    try:
+        description = validate_description(update.message.text.strip() or None)
+    except ExpenseValidationError as exc:
+        await update.message.reply_text(f"{exc}\n\nEnvie outra descricao ou digite /pular.")
+        return State.INCOME_DESCRIPTION
+    return await _save_guided_income(update, context, description)
 
 
 async def _save_guided_income(update: Update, context: ContextTypes.DEFAULT_TYPE, description: str | None) -> int:
@@ -288,9 +300,10 @@ async def receive_fixed_amount(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def receive_fixed_category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    category = update.message.text.strip().lower()
-    if not category:
-        await update.message.reply_text("Informe uma categoria. Exemplo: moradia")
+    try:
+        category = validate_category(update.message.text, command="/fixo")
+    except ExpenseValidationError as exc:
+        await update.message.reply_text(str(exc))
         return State.FIXED_CATEGORY
 
     context.user_data["guided"]["category"] = category
@@ -299,7 +312,12 @@ async def receive_fixed_category(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def receive_fixed_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    return await _save_guided_fixed_expense(update, context, update.message.text.strip() or None)
+    try:
+        description = validate_description(update.message.text.strip() or None)
+    except ExpenseValidationError as exc:
+        await update.message.reply_text(f"{exc}\n\nEnvie outra descricao ou digite /pular.")
+        return State.FIXED_DESCRIPTION
+    return await _save_guided_fixed_expense(update, context, description)
 
 
 async def _save_guided_fixed_expense(update: Update, context: ContextTypes.DEFAULT_TYPE, description: str | None) -> int:
@@ -343,12 +361,19 @@ async def start_budget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
 
 async def receive_budget_category(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    raw_category = update.message.text.strip().lower()
+    raw_category = update.message.text.strip()
     if not raw_category:
         await update.message.reply_text("Digite total ou uma categoria. Exemplo: transporte")
         return State.BUDGET_CATEGORY
 
-    context.user_data["guided"]["category"] = None if raw_category == "total" else raw_category
+    if raw_category.lower() == "total":
+        context.user_data["guided"]["category"] = None
+    else:
+        try:
+            context.user_data["guided"]["category"] = validate_category(raw_category, command="/orcamento")
+        except ExpenseValidationError as exc:
+            await update.message.reply_text(str(exc))
+            return State.BUDGET_CATEGORY
     await update.message.reply_text("Qual o valor do orcamento? Exemplo: 600")
     return State.BUDGET_AMOUNT
 

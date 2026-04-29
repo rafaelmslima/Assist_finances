@@ -6,6 +6,7 @@ from io import BytesIO
 from unittest.mock import patch
 
 from sqlalchemy import create_engine, event, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -22,9 +23,10 @@ from app.database.repository import (
     UpdateBroadcastRepository,
     UserRepository,
 )
-from app.database.models import UpdateBroadcast
+from app.database.models import Budget, UpdateBroadcast
 from app.services.broadcast_service import BroadcastService
 from app.services.budget_service import BudgetService
+from app.services.analytics_service import AnalyticsService
 import app.services.chart_report_service as chart_reports
 from app.services.chart_report_service import BUDGET_EMPTY_MESSAGE, ChartReportService
 from app.services.date_service import month_range, previous_month
@@ -32,7 +34,15 @@ from app.services.expense_service import ExpenseService
 from app.services.fixed_expense_service import FixedExpenseService
 from app.services.income_service import IncomeService
 from app.services.user_service import TelegramUserData, UserService
-from app.utils.validators import ParsedBudget, ParsedExpense, ParsedFixedExpense, ParsedIncome
+from app.utils.validators import (
+    ExpenseValidationError,
+    ParsedBudget,
+    ParsedExpense,
+    ParsedFixedExpense,
+    ParsedIncome,
+    parse_add_command,
+    validate_broadcast_message,
+)
 
 
 class RepositoryWorkflowTest(unittest.TestCase):
@@ -71,6 +81,16 @@ class RepositoryWorkflowTest(unittest.TestCase):
 
         self.assertEqual(first.id, second.id)
         self.assertEqual(second.telegram_chat_id, 1100)
+
+    def test_user_input_lengths_are_validated_before_database_write(self):
+        with self.assertRaises(ExpenseValidationError):
+            parse_add_command(["10", "x" * 81])
+
+        with self.assertRaises(ExpenseValidationError):
+            parse_add_command(["10", "mercado", "x" * 256])
+
+        with self.assertRaises(ExpenseValidationError):
+            validate_broadcast_message("x" * 4097)
 
     def test_expense_edit_and_delete_are_limited_to_owner(self):
         owner = self._create_user(100)
@@ -121,6 +141,18 @@ class RepositoryWorkflowTest(unittest.TestCase):
             self.assertEqual(fixed.telegram_user_id, user.telegram_user_id)
             self.assertEqual(fixed_service.list_fixed_expenses(user.id)["total"], 800)
             self.assertEqual(budget_status.get_budget_status(user.id)["total_budget"], 3000)
+
+    def test_total_budget_is_unique_per_user_and_month_even_without_category(self):
+        user = self._create_user(303)
+
+        with self.Session() as db:
+            first = Budget(user_id=user.id, telegram_user_id=user.telegram_user_id, month="2026-04", category=None, amount=1000)
+            second = Budget(user_id=user.id, telegram_user_id=user.telegram_user_id, month="2026-04", category=None, amount=1200)
+            db.add(first)
+            db.commit()
+            db.add(second)
+            with self.assertRaises(IntegrityError):
+                db.commit()
 
     def test_expense_categories_are_distinct_sorted_and_user_scoped(self):
         owner = self._create_user(301)
@@ -296,6 +328,87 @@ class RepositoryWorkflowTest(unittest.TestCase):
         self.assertIn("Categorias acima do limite", budget_report.text)
         self.assertIsNotNone(fixed_report.chart)
         self.assertIn("Fixos previstos", fixed_report.text)
+
+    def test_available_daily_uses_balance_days_remaining_and_historical_excess(self):
+        user = self._create_user(804)
+        target_date = date(2026, 4, 15)
+
+        with self.Session() as db:
+            expense_service = ExpenseService(ExpenseRepository(db))
+            income = IncomeService(IncomeRepository(db)).add_income(
+                user.id,
+                ParsedIncome(amount=3000, description="salario"),
+            )
+            current_expense = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=900, category="mercado", description=None),
+            )
+            historical_dates = [date(2026, 3, 10), date(2026, 2, 10), date(2026, 1, 10)]
+            historical_expenses = [
+                expense_service.add_expense(
+                    user.id,
+                    ParsedExpense(amount=300, category="mercado", description=None),
+                )
+                for _ in historical_dates
+            ]
+            FixedExpenseService(FixedExpenseRepository(db)).add_fixed_expense(
+                user.id,
+                ParsedFixedExpense(amount=500, category="moradia", description=None),
+            )
+
+            income.created_at = datetime(2026, 4, 1)
+            current_expense.created_at = datetime(2026, 4, 5)
+            for expense, historical_date in zip(historical_expenses, historical_dates):
+                expense.created_at = datetime.combine(historical_date, datetime.min.time())
+            db.commit()
+
+            result = AnalyticsService(
+                ExpenseRepository(db),
+                IncomeRepository(db),
+                BudgetRepository(db),
+                FixedExpenseRepository(db),
+            ).get_available_daily_amount(user.id, target_date)
+
+        self.assertEqual(result["remaining_balance"], 1600)
+        self.assertEqual(result["days_remaining"], 16)
+        self.assertEqual(result["trend"], "acima do normal")
+        self.assertLess(result["daily_amount"], 100)
+
+    def test_smart_summary_flags_budget_usage_and_negative_projection(self):
+        user = self._create_user(805)
+        target_date = date(2026, 4, 15)
+
+        with self.Session() as db:
+            expense_service = ExpenseService(ExpenseRepository(db))
+            income = IncomeService(IncomeRepository(db)).add_income(
+                user.id,
+                ParsedIncome(amount=1000, description="salario"),
+            )
+            expense = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=900, category="mercado", description=None),
+            )
+            BudgetRepository(db).upsert(user.id, amount=1000, category=None, target_date=target_date)
+            FixedExpenseService(FixedExpenseRepository(db)).add_fixed_expense(
+                user.id,
+                ParsedFixedExpense(amount=200, category="servicos", description=None),
+            )
+            income.created_at = datetime(2026, 4, 1)
+            expense.created_at = datetime(2026, 4, 4)
+            db.commit()
+
+            result = AnalyticsService(
+                ExpenseRepository(db),
+                IncomeRepository(db),
+                BudgetRepository(db),
+                FixedExpenseRepository(db),
+            ).get_smart_summary(user.id, target_date)
+
+        self.assertEqual(result["monthly_expenses"], 900)
+        self.assertEqual(result["current_balance"], 100)
+        self.assertEqual(result["budget_used_percent"], 90)
+        self.assertIn("Voce ja usou mais de 80% do seu orcamento mensal.", result["alerts"])
+        self.assertIn("Seu saldo projetado esta negativo.", result["alerts"])
 
 
 class SchedulerWorkflowTest(unittest.TestCase):

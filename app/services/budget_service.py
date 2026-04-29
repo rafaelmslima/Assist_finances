@@ -1,6 +1,7 @@
 from app.database.models import Budget
 from app.database.repository import BudgetRepository, ExpenseRepository
 from app.services.date_service import month_range
+from app.utils.money import ZERO, to_money
 from app.utils.validators import ParsedBudget
 
 
@@ -24,32 +25,32 @@ class BudgetService:
             start_date=start_date,
             end_date=end_date,
         )
-        total_spent = sum(expenses_by_category.values())
+        total_spent = to_money(sum(expenses_by_category.values(), ZERO))
 
         total_budget = next((budget.amount for budget in budgets if budget.category is None), None)
         categories = []
         for budget in budgets:
             if budget.category is None:
                 continue
-            spent = float(expenses_by_category.get(budget.category, 0))
+            spent = to_money(expenses_by_category.get(budget.category))
             categories.append(
                 {
                     "category": budget.category,
-                    "budget": float(budget.amount),
-                    "spent": round(spent, 2),
+                    "budget": budget.amount,
+                    "spent": spent,
                     "used_percent": _percentage(spent, budget.amount),
                 }
             )
 
         return {
-            "total_budget": float(total_budget) if total_budget is not None else None,
-            "total_spent": round(total_spent, 2),
+            "total_budget": total_budget if total_budget is not None else None,
+            "total_spent": total_spent,
             "total_used_percent": _percentage(total_spent, total_budget) if total_budget else None,
             "categories": categories,
         }
 
 
-def _percentage(value: float, base: float | None) -> float:
+def _percentage(value: object, base: object | None) -> float:
     if not base:
         return 0
-    return round((value / base) * 100, 1)
+    return round((float(value) / float(base)) * 100, 1)

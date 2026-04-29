@@ -1,6 +1,7 @@
 from datetime import date, datetime
+from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -17,7 +18,7 @@ class Expense(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     category: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -81,7 +82,7 @@ class Income(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -96,6 +97,14 @@ class Budget(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "month", "category", name="uq_budget_user_month_category"),
         Index("ix_budgets_user_month", "user_id", "month"),
+        Index(
+            "uq_budgets_user_month_total",
+            "user_id",
+            "month",
+            unique=True,
+            sqlite_where=text("category IS NULL"),
+            postgresql_where=text("category IS NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -103,7 +112,7 @@ class Budget(Base):
     telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
     month: Mapped[str] = mapped_column(String(7), nullable=False)
     category: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=datetime.now,
@@ -122,7 +131,7 @@ class FixedExpense(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
-    amount: Mapped[float] = mapped_column(Float, nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     category: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

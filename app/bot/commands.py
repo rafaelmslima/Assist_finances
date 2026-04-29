@@ -1,6 +1,7 @@
 from datetime import date
 
 from app.database.models import Expense, FixedExpense, Income
+from app.utils.money import to_money
 
 
 START_TEXT = """
@@ -19,6 +20,8 @@ Comandos disponiveis:
 /receita - inicia cadastro guiado de receita
 /receita valor descricao opcional - registra uma entrada rapida
 /saldo - mostra saldo real e projetado
+/disponivel - mostra quanto voce pode gastar por dia ate o fim do mes
+/resumo - mostra um dashboard financeiro resumido
 /orcamento - inicia cadastro guiado de orcamento
 /orcamento valor ou /orcamento categoria valor - define orcamento rapido
 /previsao - projeta gastos do mes
@@ -63,6 +66,8 @@ Receitas, saldo e planejamento:
 /receita valor descricao opcional
 /receitas valor descricao opcional
 /saldo
+/disponivel
+/resumo
 /orcamento
 /orcamento valor
 /orcamento categoria valor
@@ -109,8 +114,8 @@ def format_broadcast_result(total_users: int, sent_count: int, failed_count: int
     )
 
 
-def format_currency(value: float) -> str:
-    return f"R$ {value:.2f}".replace(".", ",")
+def format_currency(value: object) -> str:
+    return f"R$ {to_money(value):.2f}".replace(".", ",")
 
 
 def format_month_summary(summary: dict[str, object]) -> str:
@@ -211,6 +216,45 @@ def format_balance(balance: dict[str, object]) -> str:
             f"Saldo projetado: {format_currency(projected_balance)}{warning}",
         ]
     )
+
+
+def format_available_daily(available: dict[str, object]) -> str:
+    return "\n".join(
+        [
+            "💰 Voce pode gastar por dia:",
+            format_currency(float(available["daily_amount"])),
+            "",
+            "📊 Base:",
+            f"Saldo restante: {format_currency(float(available['remaining_balance']))}",
+            f"Dias restantes: {int(available['days_remaining'])}",
+            "",
+            f"⚠️ Tendencia: {available['trend']}",
+        ]
+    )
+
+
+def format_smart_summary(summary: dict[str, object]) -> str:
+    budget_percent = summary["budget_used_percent"]
+    budget_line = (
+        f"📊 Orcamento usado: {float(budget_percent):.1f}%".replace(".", ",")
+        if budget_percent is not None
+        else "📊 Orcamento usado: sem orcamento definido"
+    )
+    lines = [
+        f"💸 Gasto do mes: {format_currency(float(summary['monthly_expenses']))}",
+        f"💰 Saldo atual: {format_currency(float(summary['current_balance']))}",
+        budget_line,
+        f"📅 Media diaria: {format_currency(float(summary['current_daily_average']))}",
+        f"📈 Tendencia: {summary['trend']}",
+    ]
+
+    alerts = summary["alerts"]
+    if alerts:
+        lines.append("")
+        for alert in alerts:
+            lines.append(f"⚠️ {alert}")
+
+    return "\n".join(lines)
 
 
 def format_forecast(forecast: dict[str, object], daily: bool = False) -> str:

@@ -14,6 +14,8 @@ Bot de Telegram para controle financeiro pessoal com gastos, receitas, orcamento
 - `/delete id`: apaga um gasto.
 - `/receita valor descricao` ou `/receitas valor descricao`: registra uma entrada financeira.
 - `/saldo`: mostra saldo atual, receitas do mes, gastos do mes, fixos previstos e saldo projetado.
+- `/disponivel`: mostra quanto ainda da para gastar por dia ate o fim do mes.
+- `/resumo`: mostra dashboard resumido com gasto, saldo, orcamento usado, media diaria, tendencia e alertas.
 - `/orcamento valor`: define o orcamento total do mes atual.
 - `/orcamento categoria valor`: define o orcamento mensal de uma categoria.
 - `/previsao`: calcula previsao manual do mes.
@@ -151,9 +153,9 @@ Nunca versionar `.env`, bancos SQLite locais ou arquivos de ambiente real.
 
 ## Banco e migrations
 
-Para ambiente local simples com SQLite, o bot cria as tabelas automaticamente ao iniciar quando `DATABASE_URL` esta vazia.
+Para ambiente local simples com SQLite, o bot executa as migrations Alembic automaticamente ao iniciar quando `DATABASE_URL` esta vazia.
 
-Para ambientes compartilhados ou deploy com PostgreSQL, use Alembic. No Railway, o bot executa as migrations automaticamente ao iniciar quando detecta PostgreSQL:
+Para ambientes compartilhados ou deploy com PostgreSQL, tambem use Alembic. No Railway, o bot executa as migrations automaticamente ao iniciar quando detecta PostgreSQL:
 
 ```bash
 python main.py

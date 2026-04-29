@@ -1,35 +1,43 @@
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+
+from app.utils.money import to_money
 
 
 @dataclass(frozen=True)
 class ParsedExpense:
-    amount: float
+    amount: Decimal
     category: str
     description: str | None
 
 
 @dataclass(frozen=True)
 class ParsedIncome:
-    amount: float
+    amount: Decimal
     description: str | None
 
 
 @dataclass(frozen=True)
 class ParsedBudget:
-    amount: float
+    amount: Decimal
     category: str | None
 
 
 @dataclass(frozen=True)
 class ParsedFixedExpense:
-    amount: float
+    amount: Decimal
     category: str
     description: str | None
 
 
 class ExpenseValidationError(ValueError):
     pass
+
+
+CATEGORY_MAX_LENGTH = 80
+DESCRIPTION_MAX_LENGTH = 255
+BROADCAST_MAX_LENGTH = 4096
 
 
 def parse_add_command(args: list[str]) -> ParsedExpense:
@@ -59,7 +67,7 @@ def parse_income_command(args: list[str]) -> ParsedIncome:
         )
 
     amount = parse_amount(args[0], command="/receita")
-    description = " ".join(args[1:]).strip() or None
+    description = validate_description(" ".join(args[1:]).strip() or None)
     return ParsedIncome(amount=amount, description=description)
 
 
@@ -68,9 +76,7 @@ def parse_budget_command(args: list[str]) -> ParsedBudget:
         return ParsedBudget(amount=parse_amount(args[0], command="/orcamento"), category=None)
 
     if len(args) == 2:
-        category = args[0].strip().lower()
-        if not category:
-            raise ExpenseValidationError("Informe uma categoria. Exemplo: /orcamento alimentacao 900")
+        category = validate_category(args[0], command="/orcamento")
         return ParsedBudget(amount=parse_amount(args[1], command="/orcamento"), category=category)
 
     raise ExpenseValidationError(
@@ -105,16 +111,16 @@ def parse_expense_id(raw_value: str) -> int:
     return expense_id
 
 
-def parse_amount(raw_value: str, command: str) -> float:
+def parse_amount(raw_value: str, command: str) -> Decimal:
     normalized_value = raw_value.replace(",", ".")
     try:
-        amount = float(normalized_value)
-    except ValueError as exc:
+        amount = to_money(normalized_value)
+    except (InvalidOperation, ValueError) as exc:
         raise ExpenseValidationError(f"O valor precisa ser numerico. Exemplo: {command} 25") from exc
 
     if amount <= 0:
         raise ExpenseValidationError("O valor deve ser maior que zero.")
-    return round(amount, 2)
+    return amount
 
 
 def parse_day_command(args: list[str], today: date | None = None) -> date:
@@ -140,6 +146,32 @@ def parse_day_command(args: list[str], today: date | None = None) -> date:
         raise ExpenseValidationError("Data invalida. Use /dia 15 ou /dia 22/04/2026.") from exc
 
 
+def validate_category(raw_category: str, command: str) -> str:
+    category = raw_category.strip().lower()
+    if not category:
+        raise ExpenseValidationError(f"Informe uma categoria. Exemplo: {command} 120 transporte uber")
+    if len(category) > CATEGORY_MAX_LENGTH:
+        raise ExpenseValidationError(f"A categoria deve ter no maximo {CATEGORY_MAX_LENGTH} caracteres.")
+    return category
+
+
+def validate_description(description: str | None) -> str | None:
+    if not description:
+        return None
+    if len(description) > DESCRIPTION_MAX_LENGTH:
+        raise ExpenseValidationError(f"A descricao deve ter no maximo {DESCRIPTION_MAX_LENGTH} caracteres.")
+    return description
+
+
+def validate_broadcast_message(message: str) -> str:
+    message = message.strip()
+    if not message:
+        raise ExpenseValidationError("Use: /broadcast mensagem")
+    if len(message) > BROADCAST_MAX_LENGTH:
+        raise ExpenseValidationError(f"A mensagem deve ter no maximo {BROADCAST_MAX_LENGTH} caracteres.")
+    return message
+
+
 def _parse_expense_fields(args: list[str], command: str) -> ParsedExpense:
     if len(args) < 2:
         raise ExpenseValidationError(
@@ -149,9 +181,7 @@ def _parse_expense_fields(args: list[str], command: str) -> ParsedExpense:
 
     amount = parse_amount(args[0], command=command)
 
-    category = args[1].strip().lower()
-    if not category:
-        raise ExpenseValidationError(f"Informe uma categoria. Exemplo: {command} 120 transporte uber")
+    category = validate_category(args[1], command=command)
 
-    description = " ".join(args[2:]).strip() or None
+    description = validate_description(" ".join(args[2:]).strip() or None)
     return ParsedExpense(amount=amount, category=category, description=description)

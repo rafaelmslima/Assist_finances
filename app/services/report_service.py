@@ -3,6 +3,7 @@ from datetime import date, datetime, time, timedelta
 
 from app.database.models import Expense
 from app.database.repository import ExpenseRepository
+from app.utils.money import ZERO, to_money
 
 
 class ReportService:
@@ -16,7 +17,7 @@ class ReportService:
             start_date=start_date,
             end_date=end_date,
         )
-        total = round(sum(totals_by_category.values()), 2)
+        total = to_money(sum(totals_by_category.values(), ZERO))
         count = self.repository.count_by_period(
             user_id=user_id,
             start_date=start_date,
@@ -38,7 +39,7 @@ class ReportService:
             start_date=start_date,
             end_date=end_date,
         )
-        total = round(sum(expense.amount for expense in expenses), 2)
+        total = to_money(sum((expense.amount for expense in expenses), ZERO))
 
         return {
             "date": target_date,

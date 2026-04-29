@@ -1,5 +1,6 @@
+import asyncio
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -16,10 +17,12 @@ from app.database.repository import (
     UserRepository,
 )
 from app.database.session import SessionLocal
+from app.database.models import User
 from app.services.analytics_service import AnalyticsService
 
 
 logger = logging.getLogger(__name__)
+DAILY_FORECAST_CONCURRENCY = 5
 
 
 async def send_daily_forecasts(application: Application) -> None:
@@ -28,15 +31,29 @@ async def send_daily_forecasts(application: Application) -> None:
 
     with SessionLocal() as db:
         user_repository = UserRepository(db)
-        notification_repository = DailyNotificationRepository(db)
         users = user_repository.list_active_users()
 
-    for user in users:
+    semaphore = asyncio.Semaphore(DAILY_FORECAST_CONCURRENCY)
+    await asyncio.gather(
+        *[
+            _send_daily_forecast_to_user(application, user, today, semaphore)
+            for user in users
+        ]
+    )
+
+
+async def _send_daily_forecast_to_user(
+    application: Application,
+    user: User,
+    today: date,
+    semaphore: asyncio.Semaphore,
+) -> None:
+    async with semaphore:
         try:
             with SessionLocal() as db:
                 notification_repository = DailyNotificationRepository(db)
-                if notification_repository.was_sent(user.id, today):
-                    continue
+                if not notification_repository.try_mark_sent(user.id, today):
+                    return
 
                 analytics = AnalyticsService(
                     ExpenseRepository(db),
@@ -48,10 +65,9 @@ async def send_daily_forecasts(application: Application) -> None:
                 message = format_forecast(forecast, daily=True)
 
             await application.bot.send_message(chat_id=user.telegram_chat_id, text=message)
-
-            with SessionLocal() as db:
-                DailyNotificationRepository(db).mark_sent(user.id, today)
         except Exception:
+            with SessionLocal() as db:
+                DailyNotificationRepository(db).clear_sent_marker(user.id, today)
             logger.exception("Falha ao enviar previsao diaria para user_id=%s", user.id)
 
 
