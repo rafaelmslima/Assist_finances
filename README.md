@@ -102,7 +102,7 @@ copy .env.example .env
 
 ```env
 TELEGRAM_BOT_TOKEN=token_gerado_pelo_BotFather
-DATABASE_URL=sqlite:///./finance_bot.db
+DATABASE_URL=
 TIMEZONE=America/Sao_Paulo
 ALLOWED_TELEGRAM_IDS=
 ```
@@ -143,7 +143,7 @@ ALLOWED_TELEGRAM_IDS=
 ```
 
 - `TELEGRAM_BOT_TOKEN`: obrigatoria.
-- `DATABASE_URL`: opcional; usa SQLite local por padrao.
+- `DATABASE_URL`: opcional; quando vazia, usa SQLite local em `./finance_bot.db`.
 - `TIMEZONE`: opcional; usada pelo scheduler diario.
 - `ALLOWED_TELEGRAM_IDS`: opcional; quando vazia, qualquer usuario pode usar o bot.
 
@@ -151,9 +151,15 @@ Nunca versionar `.env`, bancos SQLite locais ou arquivos de ambiente real.
 
 ## Banco e migrations
 
-Para ambiente local simples, o bot ainda cria as tabelas automaticamente ao iniciar.
+Para ambiente local simples com SQLite, o bot cria as tabelas automaticamente ao iniciar quando `DATABASE_URL` esta vazia.
 
-Para ambientes compartilhados ou deploy, use Alembic:
+Para ambientes compartilhados ou deploy com PostgreSQL, use Alembic. No Railway, o start command ja executa:
+
+```bash
+alembic upgrade head && python main.py
+```
+
+Para rodar migrations manualmente:
 
 ```powershell
 alembic upgrade head
@@ -166,7 +172,7 @@ alembic revision --autogenerate -m "descricao da mudanca"
 alembic upgrade head
 ```
 
-SQLite e adequado para testes locais e uso pessoal com baixo volume. Migre para PostgreSQL quando houver varios usuarios reais, concorrencia, necessidade de backup/restore confiavel, observabilidade, deploy em nuvem ou evolucao frequente do schema.
+SQLite e adequado para desenvolvimento local e uso pessoal com baixo volume. Em deploy no Railway, prefira PostgreSQL porque o filesystem do container pode ser efemero e o arquivo `finance_bot.db` pode ser perdido em redeploy, restart ou recriacao do container.
 
 Exemplo de `DATABASE_URL` para PostgreSQL:
 
@@ -174,7 +180,7 @@ Exemplo de `DATABASE_URL` para PostgreSQL:
 DATABASE_URL=postgresql+psycopg://usuario:senha@host:5432/finance_bot
 ```
 
-Ao migrar para PostgreSQL, adicione o driver escolhido ao `requirements.txt`.
+Railway pode fornecer `postgres://` ou `postgresql://`; o projeto normaliza essas URLs para `postgresql+psycopg://` automaticamente. O driver `psycopg[binary]` ja esta no `requirements.txt`.
 
 ## Rodar com Docker
 
@@ -231,8 +237,8 @@ O bot usa polling, entao nao precisa expor porta HTTP. O processo deve ficar rod
 
 Arquivos de start incluidos:
 
-- `Procfile`: `worker: python main.py`
-- `railway.json`: define `startCommand` como `python main.py` e restart em falha.
+- `Procfile`: `worker: alembic upgrade head && python main.py`
+- `railway.json`: define `startCommand` como `alembic upgrade head && python main.py` e restart em falha.
 
 ### 1. Subir o projeto para o GitHub
 
@@ -244,55 +250,86 @@ Confirme que `.env`, bancos SQLite e `.venv` nao foram versionados. O `.gitignor
 2. Crie um novo projeto.
 3. Escolha deploy a partir do GitHub.
 4. Selecione o repositorio do `finance_bot`.
-5. Mantenha o comando de start como `python main.py` se o Railway pedir um valor manual.
+5. Se o Railway pedir um comando de start manual, use `alembic upgrade head && python main.py`.
 
-### 3. Configurar variaveis de ambiente
+### 3. Adicionar PostgreSQL no Railway
 
-No Railway, abra `Variables` e configure:
+No canvas do projeto Railway:
+
+1. Clique em `+ New`.
+2. Selecione `Database`.
+3. Escolha `Add PostgreSQL`.
+4. Aguarde o servico PostgreSQL ficar ativo.
+5. Abra o servico PostgreSQL e confirme que ele expose variaveis como `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` e `DATABASE_URL`.
+
+### 4. Configurar variaveis de ambiente do bot
+
+No servico do bot, abra `Variables` e configure:
 
 ```env
 TELEGRAM_BOT_TOKEN=token_real_do_bot
 TIMEZONE=America/Sao_Paulo
 ALLOWED_TELEGRAM_IDS=
+DATABASE_URL=${{Postgres.DATABASE_URL}}
 ```
 
-Opcional para SQLite:
+Use o nome real do seu servico PostgreSQL no lugar de `Postgres`, se ele tiver outro nome no canvas. Essa referencia faz o Railway iniciar o PostgreSQL antes do bot e injeta a URL correta no deploy.
+
+Para teste local sem PostgreSQL, deixe `DATABASE_URL` vazia:
 
 ```env
-DATABASE_URL=sqlite:///./finance_bot.db
+DATABASE_URL=
 ```
 
-Opcional recomendado para PostgreSQL:
+Para teste local apontando para PostgreSQL, use uma URL real:
 
 ```env
 DATABASE_URL=postgresql://usuario:senha@host:porta/banco
 ```
 
-O projeto converte automaticamente `postgresql://` para `postgresql+psycopg://`, compatibilizando a URL do Railway com SQLAlchemy e `psycopg`.
+O projeto converte automaticamente `postgres://` e `postgresql://` para `postgresql+psycopg://`, compatibilizando a URL do Railway com SQLAlchemy e `psycopg`.
 
-### 4. Persistencia do banco
+### 5. Persistencia do banco
 
 SQLite em Railway serve apenas para teste rapido. O filesystem pode ser efemero; em redeploy, restart ou recriacao do container, o arquivo `finance_bot.db` pode ser perdido.
 
-Para um teste online mais confiavel, adicione um PostgreSQL no Railway e use a `DATABASE_URL` fornecida por ele. Antes do primeiro uso em PostgreSQL, rode as migrations:
+Para um teste online mais confiavel, use PostgreSQL no Railway. O start command ja roda as migrations antes de iniciar o bot:
+
+```bash
+alembic upgrade head && python main.py
+```
+
+Se quiser rodar migrations manualmente antes do deploy, rode localmente apontando `DATABASE_URL` para o banco remoto ou use um shell/job temporario no Railway:
 
 ```bash
 alembic upgrade head
 ```
 
-Se nao houver etapa separada para rodar migrations no Railway, rode localmente apontando `DATABASE_URL` para o banco remoto ou use um shell/job temporario no Railway.
-
-### 5. Verificar logs
+### 6. Verificar logs
 
 Depois do deploy, abra `Deployments` ou `Logs` no Railway e procure por:
 
 - instalacao das dependencias do `requirements.txt`;
+- execucao de `alembic upgrade head`;
 - execucao de `python main.py`;
 - ausencia de erro sobre `TELEGRAM_BOT_TOKEN`;
 - inicializacao do polling do Telegram;
 - logs do scheduler diario.
 
-### 6. Cuidados de operacao
+### 7. Testar o banco correto
+
+1. No Railway, confira nos logs se o deploy executou `alembic upgrade head` sem erro.
+2. Envie `/start` para o bot no Telegram.
+3. Envie `/add 10 teste deploy`.
+4. Envie `/receita 100 teste`.
+5. Envie `/orcamento 500`.
+6. Envie `/fixo 20 teste fixo`.
+7. Reinicie o servico no Railway.
+8. Rode `/mes`, `/saldo` e `/fixos`; os dados devem continuar existindo.
+
+Se os dados sumirem apos restart, o bot provavelmente esta usando SQLite efemero em vez de PostgreSQL. Revise `DATABASE_URL` no servico do bot.
+
+### 8. Cuidados de operacao
 
 Use apenas uma instancia ativa do bot. Duas instancias com polling podem conflitar no Telegram e duplicar scheduler. Se futuramente escalar replicas, mova o scheduler para um worker unico ou use lock distribuido no banco.
 
