@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -16,7 +16,7 @@ class Expense(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
-    telegram_user_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     category: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -32,8 +32,8 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    telegram_user_id: Mapped[int] = mapped_column(Integer, unique=True, index=True, nullable=False)
-    telegram_chat_id: Mapped[int] = mapped_column(Integer, index=True, nullable=False)
+    telegram_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
+    telegram_chat_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
     first_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     username: Mapped[str | None] = mapped_column(String(120), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -80,7 +80,7 @@ class Income(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
-    telegram_user_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -100,7 +100,7 @@ class Budget(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
-    telegram_user_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
     month: Mapped[str] = mapped_column(String(7), nullable=False)
     category: Mapped[str | None] = mapped_column(String(80), nullable=True)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
@@ -121,7 +121,7 @@ class FixedExpense(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
-    telegram_user_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     category: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -141,7 +141,7 @@ class DailyNotification(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
-    telegram_user_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
     sent_on: Mapped[date] = mapped_column(Date, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
