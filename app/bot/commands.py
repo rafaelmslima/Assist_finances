@@ -7,7 +7,8 @@ START_TEXT = """
 Ola! Eu sou seu bot de controle financeiro pessoal.
 
 Comandos disponiveis:
-/add valor categoria descricao opcional - registra um gasto
+/add - inicia cadastro guiado de gasto
+/add valor categoria descricao opcional - registra um gasto rapido
 /mes - mostra o resumo do mes atual
 /hoje - lista os gastos de hoje
 /dia 15 - lista os gastos de um dia do mes atual
@@ -15,20 +16,33 @@ Comandos disponiveis:
 /grafico - envia um grafico de pizza por categoria
 /edit id valor categoria descricao opcional - edita um gasto
 /delete id - apaga um gasto
-/receita ou /receitas valor descricao opcional - registra uma entrada
+/receita - inicia cadastro guiado de receita
+/receita valor descricao opcional - registra uma entrada rapida
 /saldo - mostra saldo real e projetado
-/orcamento valor ou /orcamento categoria valor - define orcamento mensal
+/orcamento - inicia cadastro guiado de orcamento
+/orcamento valor ou /orcamento categoria valor - define orcamento rapido
 /previsao - projeta gastos do mes
 /comparar - compara com o mes anterior
-/fixo valor categoria descricao opcional - cadastra gasto fixo previsto
+/fixo - inicia cadastro guiado de gasto fixo
+/fixo valor categoria descricao opcional - cadastra gasto fixo rapido
 /fixos - lista gastos fixos
 /delete_fixo id - apaga gasto fixo
+/cancelar - cancela um fluxo guiado
 /help - mostra ajuda e exemplos
 """.strip()
 
 
 HELP_TEXT = """
+Voce pode usar os comandos de duas formas:
+
+1. Rapido: envie o comando completo com os dados.
+2. Guiado: envie apenas o comando e responda as perguntas do bot.
+
+Use /cancelar para cancelar um fluxo guiado.
+Use /pular para deixar uma descricao opcional em branco.
+
 Adicionar gasto:
+/add
 /add valor categoria descricao opcional
 Exemplos:
 /add 25 mercado
@@ -43,13 +57,16 @@ Resumo e consultas:
 /grafico - grafico de pizza com percentual por categoria no mes atual
 
 Receitas, saldo e planejamento:
+/receita
 /receita valor descricao opcional
 /receitas valor descricao opcional
 /saldo
+/orcamento
 /orcamento valor
 /orcamento categoria valor
 /previsao
 /comparar
+/fixo
 /fixo valor categoria descricao opcional
 /fixos
 /delete_fixo id
@@ -71,6 +88,7 @@ Dicas:
 - Use ponto ou virgula para centavos: 59.90 ou 59,90
 - O id aparece nas listagens de /hoje e /dia
 - Cada usuario ve apenas os proprios gastos
+- Digite apenas /add, /receita, /fixo ou /orcamento para usar o modo guiado
 """.strip()
 
 
