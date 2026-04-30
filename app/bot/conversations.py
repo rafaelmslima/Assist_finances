@@ -21,6 +21,7 @@ from app.bot.keyboards import (
     CANCEL_EXPENSE_CALLBACK,
     CATEGORY_PREFIX,
     CONFIRM_EXPENSE_CALLBACK,
+    MAIN_BUTTON_ADD_EXPENSE,
     NEW_CATEGORY_CALLBACK,
     OTHER_CATEGORY_CALLBACK,
     build_expense_category_keyboard,
@@ -401,7 +402,10 @@ def build_conversation_handlers() -> list[ConversationHandler]:
     text_filter = filters.TEXT & ~filters.COMMAND
     return [
         ConversationHandler(
-            entry_points=[CommandHandler("add", start_add_expense)],
+            entry_points=[
+                CommandHandler("add", start_add_expense),
+                MessageHandler(filters.Regex(f"^{MAIN_BUTTON_ADD_EXPENSE}$"), start_add_expense),
+            ],
             states={
                 State.ADD_AMOUNT: [MessageHandler(text_filter, receive_add_amount)],
                 State.ADD_CATEGORY: [

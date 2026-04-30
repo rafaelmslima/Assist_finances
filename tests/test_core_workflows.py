@@ -35,7 +35,16 @@ from app.services.fixed_expense_service import FixedExpenseService
 from app.services.income_service import IncomeService
 from app.services.user_service import TelegramUserData, UserService
 from app.bot.commands import format_spending_insights
-from app.bot.keyboards import build_main_reply_keyboard
+from app.bot.keyboards import (
+    MAIN_BUTTON_ADD_EXPENSE,
+    MAIN_BUTTON_AVAILABLE,
+    MAIN_BUTTON_CHARTS,
+    MAIN_BUTTON_HELP,
+    MAIN_BUTTON_INSIGHTS,
+    MAIN_BUTTON_MONTH,
+    MAIN_BUTTON_TODAY,
+    build_main_reply_keyboard,
+)
 from app.utils.validators import (
     ExpenseValidationError,
     ParsedBudget,
@@ -83,10 +92,10 @@ class RepositoryWorkflowTest(unittest.TestCase):
         self.assertEqual(
             keyboard.to_dict()["keyboard"],
             [
-                [{"text": "/add"}, {"text": "/hoje"}],
-                [{"text": "/mes"}, {"text": "/grafico"}],
-                [{"text": "/insights"}, {"text": "/disponivel"}],
-                [{"text": "/help"}],
+                [{"text": MAIN_BUTTON_ADD_EXPENSE}, {"text": MAIN_BUTTON_TODAY}],
+                [{"text": MAIN_BUTTON_MONTH}, {"text": MAIN_BUTTON_CHARTS}],
+                [{"text": MAIN_BUTTON_INSIGHTS}, {"text": MAIN_BUTTON_AVAILABLE}],
+                [{"text": MAIN_BUTTON_HELP}],
             ],
         )
         self.assertTrue(keyboard.resize_keyboard)

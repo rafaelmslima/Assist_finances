@@ -37,14 +37,22 @@ CHART_OPTIONS = [
     ("📌 Fixos x variáveis", "fixed_variable"),
 ]
 
+MAIN_BUTTON_ADD_EXPENSE = "Salvar gasto"
+MAIN_BUTTON_TODAY = "Hoje"
+MAIN_BUTTON_MONTH = "Resumo do mes"
+MAIN_BUTTON_CHARTS = "Graficos"
+MAIN_BUTTON_INSIGHTS = "Padroes"
+MAIN_BUTTON_AVAILABLE = "Disponivel"
+MAIN_BUTTON_HELP = "Ajuda"
+
 
 def build_main_reply_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            ["/add", "/hoje"],
-            ["/mes", "/grafico"],
-            ["/insights", "/disponivel"],
-            ["/help"],
+            [MAIN_BUTTON_ADD_EXPENSE, MAIN_BUTTON_TODAY],
+            [MAIN_BUTTON_MONTH, MAIN_BUTTON_CHARTS],
+            [MAIN_BUTTON_INSIGHTS, MAIN_BUTTON_AVAILABLE],
+            [MAIN_BUTTON_HELP],
         ],
         resize_keyboard=True,
         is_persistent=True,

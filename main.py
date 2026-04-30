@@ -5,6 +5,14 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Cont
 
 from app.bot.commands import ADMIN_ONLY_BOT_COMMANDS, PUBLIC_BOT_COMMANDS
 from app.bot.conversations import build_conversation_handlers, cancel_conversation
+from app.bot.keyboards import (
+    MAIN_BUTTON_AVAILABLE,
+    MAIN_BUTTON_CHARTS,
+    MAIN_BUTTON_HELP,
+    MAIN_BUTTON_INSIGHTS,
+    MAIN_BUTTON_MONTH,
+    MAIN_BUTTON_TODAY,
+)
 from app.bot.handlers import (
     add_expense,
     add_fixed_expense,
@@ -120,6 +128,12 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("cancelar", cancel_conversation))
     application.add_handler(CallbackQueryHandler(chart_callback, pattern="^chart:"))
     application.add_handler(CallbackQueryHandler(tutorial_callback, pattern="^tutorial:"))
+    application.add_handler(MessageHandler(filters.Regex(f"^{MAIN_BUTTON_TODAY}$"), today_summary))
+    application.add_handler(MessageHandler(filters.Regex(f"^{MAIN_BUTTON_MONTH}$"), month_summary))
+    application.add_handler(MessageHandler(filters.Regex(f"^{MAIN_BUTTON_CHARTS}$"), chart_menu))
+    application.add_handler(MessageHandler(filters.Regex(f"^{MAIN_BUTTON_INSIGHTS}$"), spending_insights))
+    application.add_handler(MessageHandler(filters.Regex(f"^{MAIN_BUTTON_AVAILABLE}$"), available_daily))
+    application.add_handler(MessageHandler(filters.Regex(f"^{MAIN_BUTTON_HELP}$"), help_command))
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
     application.add_error_handler(error_handler)
 
