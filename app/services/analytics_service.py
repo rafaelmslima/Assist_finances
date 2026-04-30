@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, time
 from decimal import Decimal
 
 from app.database.repository import BudgetRepository, ExpenseRepository, FixedExpenseRepository, IncomeRepository
@@ -16,6 +16,17 @@ from app.utils.money import ZERO, to_money
 TREND_HIGH_RATIO = Decimal("1.20")
 TREND_LOW_RATIO = Decimal("0.80")
 CATEGORY_BUDGET_WARNING_RATIO = Decimal("0.90")
+CATEGORY_GROWTH_THRESHOLD = 20.0
+WEEKEND_DAYS = {5, 6}
+WEEKDAY_NAMES = {
+    0: "segunda-feira",
+    1: "terca-feira",
+    2: "quarta-feira",
+    3: "quinta-feira",
+    4: "sexta-feira",
+    5: "sabado",
+    6: "domingo",
+}
 
 
 class AnalyticsService:
@@ -181,6 +192,60 @@ class AnalyticsService:
             "categories": categories,
         }
 
+    def get_spending_insights(
+        self,
+        telegram_user_id: int,
+        target_date: date | None = None,
+    ) -> dict[str, object]:
+        target_date = target_date or date.today()
+        current_start, current_end = month_range(target_date)
+        previous_start, previous_end = month_range(previous_month(target_date))
+        history_start = _months_ago(target_date, 6)
+
+        historical_expenses = self.expense_repository.list_by_period(
+            telegram_user_id,
+            datetime.combine(history_start, time.min),
+            current_end,
+        )
+        current_total = self.expense_repository.total_by_period(
+            telegram_user_id,
+            current_start,
+            current_end,
+        )
+        current_daily_average = current_total / elapsed_month_days(target_date)
+        historical_daily_average = self._historical_daily_average(telegram_user_id, target_date)
+
+        current_categories = self.expense_repository.totals_by_category(
+            telegram_user_id,
+            current_start,
+            current_end,
+        )
+        previous_categories = self.expense_repository.totals_by_category(
+            telegram_user_id,
+            previous_start,
+            previous_end,
+        )
+
+        category_growth = []
+        for category in sorted(set(current_categories) | set(previous_categories)):
+            previous_value = previous_categories.get(category, ZERO)
+            if previous_value <= 0:
+                continue
+            percent = _change_percent(
+                current_categories.get(category, ZERO),
+                previous_value,
+            )
+            if percent is not None and percent > CATEGORY_GROWTH_THRESHOLD:
+                category_growth.append({"category": category, "percent": percent})
+
+        category_growth.sort(key=lambda item: float(item["percent"]), reverse=True)
+
+        return {
+            "weekday_pattern": self._weekday_pattern(historical_expenses),
+            "category_growth": category_growth,
+            "trend": self._trend_label(historical_daily_average, current_daily_average),
+        }
+
     def _historical_daily_average(self, telegram_user_id: int, target_date: date) -> Decimal:
         totals = []
         cursor = previous_month(target_date)
@@ -281,8 +346,62 @@ class AnalyticsService:
                 alerts.append(f"A categoria {category} esta pelo menos 20% acima do padrao historico.")
         return alerts
 
+    @staticmethod
+    def _weekday_pattern(expenses: list[object]) -> dict[str, object]:
+        totals_by_date: dict[date, Decimal] = {}
+        for expense in expenses:
+            created_at = getattr(expense, "created_at", None)
+            amount = getattr(expense, "amount", ZERO)
+            if not isinstance(created_at, datetime):
+                continue
+            expense_date = created_at.date()
+            totals_by_date[expense_date] = totals_by_date.get(expense_date, ZERO) + to_money(amount)
+
+        totals_by_weekday: dict[int, Decimal] = {}
+        counts_by_weekday: dict[int, int] = {}
+        for expense_date, total in totals_by_date.items():
+            weekday = expense_date.weekday()
+            totals_by_weekday[weekday] = totals_by_weekday.get(weekday, ZERO) + total
+            counts_by_weekday[weekday] = counts_by_weekday.get(weekday, 0) + 1
+
+        averages = {
+            weekday: totals_by_weekday[weekday] / counts_by_weekday[weekday]
+            for weekday in totals_by_weekday
+            if counts_by_weekday.get(weekday)
+        }
+        if not averages:
+            return {"type": "insufficient_data", "top_day": None, "averages": {}}
+
+        top_day = max(averages, key=lambda weekday: averages[weekday])
+        weekend_averages = [average for weekday, average in averages.items() if weekday in WEEKEND_DAYS]
+        weekday_averages = [average for weekday, average in averages.items() if weekday not in WEEKEND_DAYS]
+        weekend_average = sum(weekend_averages, ZERO) / len(weekend_averages) if weekend_averages else ZERO
+        weekday_average = sum(weekday_averages, ZERO) / len(weekday_averages) if weekday_averages else ZERO
+
+        if weekend_average > weekday_average and top_day in WEEKEND_DAYS:
+            pattern_type = "weekend"
+        elif weekend_average < weekday_average and top_day not in WEEKEND_DAYS:
+            pattern_type = "weekday"
+        else:
+            pattern_type = "day"
+
+        return {
+            "type": pattern_type,
+            "top_day": WEEKDAY_NAMES[top_day],
+            "averages": {WEEKDAY_NAMES[weekday]: to_money(average) for weekday, average in averages.items()},
+        }
+
 
 def _change_percent(current_value: Decimal, previous_value: Decimal) -> float | None:
     if previous_value == 0:
         return None if current_value == 0 else 100.0
     return float(round(((current_value - previous_value) / previous_value) * 100, 1))
+
+
+def _months_ago(target_date: date, months: int) -> date:
+    year = target_date.year
+    month = target_date.month - months
+    while month <= 0:
+        month += 12
+        year -= 1
+    return date(year, month, 1)

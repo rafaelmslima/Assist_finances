@@ -4,36 +4,74 @@ from app.database.models import Expense, FixedExpense, Income
 from app.utils.money import to_money
 
 
+PUBLIC_BOT_COMMANDS = [
+    ("start", "Iniciar o bot e cadastrar usuario"),
+    ("help", "Ver ajuda e exemplos"),
+    ("tutorial", "Aprender a usar o bot com botoes"),
+    ("add", "Adicionar gasto: valor, categoria e descricao"),
+    ("mes", "Ver resumo de gastos do mes"),
+    ("hoje", "Ver gastos de hoje"),
+    ("dia", "Ver gastos de um dia especifico"),
+    ("grafico", "Abrir menu de graficos financeiros"),
+    ("edit", "Editar um gasto pelo ID"),
+    ("delete", "Apagar um gasto pelo ID"),
+    ("receita", "Adicionar uma receita"),
+    ("disponivel", "Ver quanto pode gastar por dia"),
+    ("resumo", "Ver dashboard financeiro resumido"),
+    ("insights", "Ver padroes automaticos de gastos"),
+    ("orcamento", "Definir orcamento mensal ou por categoria"),
+    ("previsao", "Ver previsao de gastos do mes"),
+    ("comparar", "Comparar mes atual com anterior"),
+    ("fixo", "Adicionar gasto fixo mensal"),
+    ("fixos", "Listar gastos fixos"),
+    ("delete_fixo", "Apagar gasto fixo pelo ID"),
+    ("updates_off", "Desativar novidades do bot"),
+    ("updates_on", "Reativar novidades do bot"),
+    ("cancelar", "Cancelar fluxo guiado em andamento"),
+]
+
+
+ADMIN_ONLY_BOT_COMMANDS = [
+    ("broadcast", "Enviar novidade para usuarios ativos"),
+]
+
+
+START_COMMAND_LINES = [
+    "/add - inicia cadastro guiado de gasto",
+    "/add valor categoria descricao opcional - registra um gasto rapido",
+    "/mes - mostra o resumo do mes atual",
+    "/hoje - lista os gastos de hoje",
+    "/dia 15 - lista os gastos de um dia do mes atual",
+    "/dia 22/04/2026 - lista os gastos de uma data especifica",
+    "/grafico - abre menu de graficos financeiros",
+    "/edit id valor categoria descricao opcional - edita um gasto",
+    "/delete id - apaga um gasto",
+    "/receita - inicia cadastro guiado de receita",
+    "/receita valor descricao opcional - registra uma entrada rapida",
+    "/disponivel - mostra quanto voce pode gastar por dia ate o fim do mes",
+    "/resumo - mostra um dashboard financeiro resumido",
+    "/insights - mostra padroes automaticos de gastos",
+    "/orcamento - inicia cadastro guiado de orcamento",
+    "/orcamento valor ou /orcamento categoria valor - define orcamento rapido",
+    "/previsao - projeta gastos do mes",
+    "/comparar - compara com o mes anterior",
+    "/fixo - inicia cadastro guiado de gasto fixo",
+    "/fixo valor categoria descricao opcional - cadastra gasto fixo rapido",
+    "/fixos - lista gastos fixos",
+    "/delete_fixo id - apaga gasto fixo",
+    "/updates_off - desativa notificacoes de novidades",
+    "/updates_on - reativa notificacoes de novidades",
+    "/cancelar - cancela um fluxo guiado",
+    "/help - mostra ajuda e exemplos",
+]
+
+
 START_TEXT = """
 Ola! Eu sou seu bot de controle financeiro pessoal.
 
 Comandos disponiveis:
-/add - inicia cadastro guiado de gasto
-/add valor categoria descricao opcional - registra um gasto rapido
-/mes - mostra o resumo do mes atual
-/hoje - lista os gastos de hoje
-/dia 15 - lista os gastos de um dia do mes atual
-/dia 22/04/2026 - lista os gastos de uma data especifica
-/grafico - abre menu de graficos financeiros
-/edit id valor categoria descricao opcional - edita um gasto
-/delete id - apaga um gasto
-/receita - inicia cadastro guiado de receita
-/receita valor descricao opcional - registra uma entrada rapida
-/disponivel - mostra quanto voce pode gastar por dia ate o fim do mes
-/resumo - mostra um dashboard financeiro resumido
-/orcamento - inicia cadastro guiado de orcamento
-/orcamento valor ou /orcamento categoria valor - define orcamento rapido
-/previsao - projeta gastos do mes
-/comparar - compara com o mes anterior
-/fixo - inicia cadastro guiado de gasto fixo
-/fixo valor categoria descricao opcional - cadastra gasto fixo rapido
-/fixos - lista gastos fixos
-/delete_fixo id - apaga gasto fixo
-/updates_off - desativa notificacoes de novidades
-/updates_on - reativa notificacoes de novidades
-/cancelar - cancela um fluxo guiado
-/help - mostra ajuda e exemplos
-""".strip()
+{commands}
+""".strip().format(commands="\n".join(START_COMMAND_LINES))
 
 
 HELP_TEXT = """
@@ -66,6 +104,7 @@ Receitas e planejamento:
 /receitas valor descricao opcional
 /disponivel
 /resumo
+/insights
 /orcamento
 /orcamento valor
 /orcamento categoria valor
@@ -290,6 +329,45 @@ def format_comparison(comparison: dict[str, object]) -> str:
                 f"- {category}: {format_currency(float(item['current']))} vs "
                 f"{format_currency(float(item['previous']))} ({_format_percent(item['percent'])})"
             )
+    return "\n".join(lines)
+
+
+def format_spending_insights(insights: dict[str, object]) -> str:
+    weekday_pattern = insights["weekday_pattern"]
+    category_growth = insights["category_growth"]
+    trend = str(insights["trend"])
+
+    lines = ["📊 Seus padrões:", ""]
+
+    if isinstance(weekday_pattern, dict):
+        pattern_type = weekday_pattern.get("type")
+        top_day = weekday_pattern.get("top_day")
+        if pattern_type == "weekend":
+            lines.append("📅 Você gasta mais aos fins de semana")
+        elif pattern_type == "weekday":
+            lines.append("📅 Você gasta mais em dias úteis")
+        elif top_day:
+            lines.append(f"📅 Seu maior gasto costuma ser em {top_day}")
+        else:
+            lines.append("📅 Ainda não há dados suficientes por dia")
+
+    if isinstance(category_growth, list) and category_growth:
+        top_growth = category_growth[0]
+        lines.append(
+            f"🍔 {top_growth['category']} aumentou {float(top_growth['percent']):.0f}%".replace(".", ",")
+        )
+    else:
+        lines.append("🍔 Nenhuma categoria cresceu mais de 20%")
+
+    if trend == "acima do normal":
+        lines.append("📈 Seus gastos estão acima do normal")
+    elif trend == "abaixo do normal":
+        lines.append("📈 Seus gastos estão abaixo do normal")
+    elif trend == "normal":
+        lines.append("📈 Seus gastos estão dentro do normal")
+    else:
+        lines.append("📈 Ainda não há histórico suficiente")
+
     return "\n".join(lines)
 
 

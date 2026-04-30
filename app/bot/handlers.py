@@ -23,6 +23,7 @@ from app.bot.commands import (
     format_income_saved,
     format_month_summary,
     format_smart_summary,
+    format_spending_insights,
 )
 from app.config import get_settings
 from app.database.repository import (
@@ -281,6 +282,23 @@ async def compare_months(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         result = analytics.compare_with_previous_month(user.id)
 
     await update.message.reply_text(format_comparison(result))
+
+
+async def spending_insights(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = await _get_or_register_user(update)
+    if not user:
+        return
+
+    with SessionLocal() as db:
+        analytics = AnalyticsService(
+            ExpenseRepository(db),
+            IncomeRepository(db),
+            BudgetRepository(db),
+            FixedExpenseRepository(db),
+        )
+        result = analytics.get_spending_insights(user.id)
+
+    await update.message.reply_text(format_spending_insights(result))
 
 
 async def add_fixed_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -15,6 +15,7 @@ Bot de Telegram para controle financeiro pessoal com gastos, receitas, orcamento
 - `/receita valor descricao` ou `/receitas valor descricao`: registra uma entrada financeira.
 - `/disponivel`: mostra quanto ainda da para gastar por dia ate o fim do mes.
 - `/resumo`: mostra dashboard resumido com gasto, saldo, orcamento usado, media diaria, tendencia e alertas.
+- `/insights`: mostra padroes automaticos de gastos por dia, categoria e tendencia.
 - `/orcamento valor`: define o orcamento total do mes atual.
 - `/orcamento categoria valor`: define o orcamento mensal de uma categoria.
 - `/previsao`: calcula previsao manual do mes.
@@ -390,4 +391,4 @@ Eles cobrem:
 5. Isolamento:
    - Use duas contas diferentes.
    - Registre gastos, receitas, orcamentos e fixos em ambas.
-   - Os comandos `/mes`, `/resumo`, `/disponivel`, `/previsao`, `/fixos`, `/comparar`, `/edit` e `/delete` devem afetar apenas os dados do usuario atual.
+   - Os comandos `/mes`, `/resumo`, `/disponivel`, `/insights`, `/previsao`, `/fixos`, `/comparar`, `/edit` e `/delete` devem afetar apenas os dados do usuario atual.

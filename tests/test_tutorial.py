@@ -16,7 +16,9 @@ from app.bot.keyboards import (
     build_tutorial_detail_keyboard,
     build_tutorial_menu_keyboard,
 )
+from app.bot.commands import PUBLIC_BOT_COMMANDS, START_TEXT, HELP_TEXT
 from app.bot.tutorial import TUTORIAL_CONTENT
+from main import DEFAULT_BOT_COMMANDS
 
 
 class TutorialKeyboardTest(unittest.TestCase):
@@ -62,14 +64,29 @@ class ChartKeyboardTest(unittest.TestCase):
 
 
 class TutorialCommandRegistrationTest(unittest.TestCase):
+    def test_public_bot_menu_is_built_from_the_shared_command_list(self):
+        self.assertEqual(
+            [command.command for command in DEFAULT_BOT_COMMANDS],
+            [command for command, _ in PUBLIC_BOT_COMMANDS],
+        )
+        self.assertIn("disponivel", [command.command for command in DEFAULT_BOT_COMMANDS])
+        self.assertIn("resumo", [command.command for command in DEFAULT_BOT_COMMANDS])
+        self.assertIn("insights", [command.command for command in DEFAULT_BOT_COMMANDS])
+
+    def test_start_and_help_include_all_public_commands_except_utility_only_entries(self):
+        utility_only = {"start", "help", "tutorial"}
+        for command, _ in PUBLIC_BOT_COMMANDS:
+            if command in utility_only:
+                continue
+            self.assertIn(f"/{command}", START_TEXT)
+            self.assertIn(f"/{command}", HELP_TEXT)
+
     def test_tutorial_and_charts_are_registered_in_telegram_commands(self):
         main_py = Path(__file__).resolve().parents[1] / "main.py"
         content = main_py.read_text(encoding="utf-8")
 
-        self.assertIn('BotCommand("tutorial"', content)
-        self.assertIn('BotCommand("disponivel"', content)
-        self.assertIn('BotCommand("resumo"', content)
         self.assertNotIn('BotCommand("saldo"', content)
+        self.assertIn("PUBLIC_BOT_COMMANDS", content)
         self.assertIn('CommandHandler("tutorial"', content)
         self.assertIn('CommandHandler("disponivel", available_daily)', content)
         self.assertIn('CommandHandler("resumo", smart_summary)', content)

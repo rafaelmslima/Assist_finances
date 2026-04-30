@@ -3,6 +3,7 @@ import logging
 from telegram import BotCommand, BotCommandScopeChat, Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
+from app.bot.commands import ADMIN_ONLY_BOT_COMMANDS, PUBLIC_BOT_COMMANDS
 from app.bot.conversations import build_conversation_handlers, cancel_conversation
 from app.bot.handlers import (
     add_expense,
@@ -24,6 +25,7 @@ from app.bot.handlers import (
     month_summary,
     set_budget,
     smart_summary,
+    spending_insights,
     start,
     today_summary,
     unknown_command,
@@ -45,33 +47,16 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_BOT_COMMANDS = [
-    BotCommand("start", "Iniciar o bot e cadastrar usuario"),
-    BotCommand("help", "Ver ajuda e exemplos"),
-    BotCommand("tutorial", "Aprender a usar o bot com botoes"),
-    BotCommand("add", "Adicionar gasto: valor, categoria e descricao"),
-    BotCommand("mes", "Ver resumo de gastos do mes"),
-    BotCommand("hoje", "Ver gastos de hoje"),
-    BotCommand("dia", "Ver gastos de um dia especifico"),
-    BotCommand("grafico", "Abrir menu de graficos financeiros"),
-    BotCommand("edit", "Editar um gasto pelo ID"),
-    BotCommand("delete", "Apagar um gasto pelo ID"),
-    BotCommand("receita", "Adicionar uma receita"),
-    BotCommand("disponivel", "Ver quanto pode gastar por dia"),
-    BotCommand("resumo", "Ver dashboard financeiro resumido"),
-    BotCommand("orcamento", "Definir orcamento mensal ou por categoria"),
-    BotCommand("previsao", "Ver previsao de gastos do mes"),
-    BotCommand("comparar", "Comparar mes atual com anterior"),
-    BotCommand("fixo", "Adicionar gasto fixo mensal"),
-    BotCommand("fixos", "Listar gastos fixos"),
-    BotCommand("delete_fixo", "Apagar gasto fixo pelo ID"),
-    BotCommand("updates_off", "Desativar novidades do bot"),
-    BotCommand("updates_on", "Reativar novidades do bot"),
-    BotCommand("cancelar", "Cancelar fluxo guiado em andamento"),
+    BotCommand(command, description)
+    for command, description in PUBLIC_BOT_COMMANDS
 ]
 
 ADMIN_BOT_COMMANDS = [
     *DEFAULT_BOT_COMMANDS,
-    BotCommand("broadcast", "Enviar novidade para usuarios ativos"),
+    *[
+        BotCommand(command, description)
+        for command, description in ADMIN_ONLY_BOT_COMMANDS
+    ],
 ]
 
 
@@ -122,6 +107,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("saldo", balance))
     application.add_handler(CommandHandler("disponivel", available_daily))
     application.add_handler(CommandHandler("resumo", smart_summary))
+    application.add_handler(CommandHandler("insights", spending_insights))
     application.add_handler(CommandHandler("orcamento", set_budget))
     application.add_handler(CommandHandler("previsao", forecast))
     application.add_handler(CommandHandler("comparar", compare_months))

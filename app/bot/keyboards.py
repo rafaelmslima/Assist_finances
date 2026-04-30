@@ -17,7 +17,8 @@ CHART_CLOSE_CALLBACK = f"{CHART_PREFIX}:close"
 
 TUTORIAL_TOPICS = [
     ("➕ Registrar gasto", "expense"),
-    ("💰 Receitas e saldo", "income_balance"),
+    ("💰 Receitas e resumo", "income_balance"),
+    ("🧠 Inteligencia financeira", "financial_intelligence"),
     ("📊 Resumo do mês", "month_summary"),
     ("📅 Gastos por dia", "day_summary"),
     ("📌 Gastos fixos", "fixed_expenses"),

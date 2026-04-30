@@ -34,6 +34,7 @@ from app.services.expense_service import ExpenseService
 from app.services.fixed_expense_service import FixedExpenseService
 from app.services.income_service import IncomeService
 from app.services.user_service import TelegramUserData, UserService
+from app.bot.commands import format_spending_insights
 from app.utils.validators import (
     ExpenseValidationError,
     ParsedBudget,
@@ -409,6 +410,57 @@ class RepositoryWorkflowTest(unittest.TestCase):
         self.assertEqual(result["budget_used_percent"], 90)
         self.assertIn("Voce ja usou mais de 80% do seu orcamento mensal.", result["alerts"])
         self.assertIn("Seu saldo projetado esta negativo.", result["alerts"])
+
+    def test_spending_insights_detects_weekend_category_growth_and_high_trend(self):
+        user = self._create_user(806)
+        target_date = date(2026, 4, 15)
+
+        with self.Session() as db:
+            expense_service = ExpenseService(ExpenseRepository(db))
+            current_food = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=130, category="alimentacao", description=None),
+            )
+            current_market = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=770, category="mercado", description=None),
+            )
+            previous_food = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=100, category="alimentacao", description=None),
+            )
+            historical_expenses = [
+                expense_service.add_expense(
+                    user.id,
+                    ParsedExpense(amount=100, category="base", description=None),
+                )
+                for _ in range(3)
+            ]
+
+            current_food.created_at = datetime(2026, 4, 4)
+            current_market.created_at = datetime(2026, 4, 5)
+            previous_food.created_at = datetime(2026, 3, 8)
+            historical_expenses[0].created_at = datetime(2026, 3, 2)
+            historical_expenses[1].created_at = datetime(2026, 2, 2)
+            historical_expenses[2].created_at = datetime(2026, 1, 2)
+            db.commit()
+
+            result = AnalyticsService(
+                ExpenseRepository(db),
+                IncomeRepository(db),
+                BudgetRepository(db),
+                FixedExpenseRepository(db),
+            ).get_spending_insights(user.id, target_date)
+
+        self.assertEqual(result["weekday_pattern"]["type"], "weekend")
+        self.assertEqual(result["category_growth"][0]["category"], "alimentacao")
+        self.assertEqual(result["category_growth"][0]["percent"], 30.0)
+        self.assertEqual(result["trend"], "acima do normal")
+
+        message = format_spending_insights(result)
+        self.assertIn("Você gasta mais aos fins de semana", message)
+        self.assertIn("alimentacao aumentou 30%", message)
+        self.assertIn("Seus gastos estão acima do normal", message)
 
 
 class SchedulerWorkflowTest(unittest.TestCase):

@@ -36,16 +36,29 @@ Exemplo:
 Dica: digite apenas /add para usar o modo guiado, com perguntas passo a passo.
 """.strip(),
     "income_balance": """
-💰 Receitas e saldo
+💰 Receitas e resumo
 
 Serve para registrar entradas de dinheiro e acompanhar quanto sobra.
-Use quando receber salario, extra, reembolso ou quiser consultar seu saldo.
+Use quando receber salario, extra, reembolso ou quiser consultar seu painel financeiro.
 
 Exemplos:
 /receita 3000 salário
-/saldo
+/resumo
 
-Dica: registre receitas antes de olhar o saldo para ter uma visao mais realista do mes.
+Dica: registre receitas antes de olhar o resumo para ter uma visao mais realista do mes.
+""".strip(),
+    "financial_intelligence": """
+🧠 Inteligencia financeira
+
+Serve para ver sugestoes simples baseadas em medias, sem IA.
+Use quando quiser saber quanto pode gastar por dia ou identificar padroes de gasto.
+
+Exemplos:
+/disponivel
+/resumo
+/insights
+
+Dica: quanto mais meses registrados, melhor fica a comparacao com seu padrao.
 """.strip(),
     "month_summary": """
 📊 Resumo do mês
