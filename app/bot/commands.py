@@ -19,7 +19,6 @@ Comandos disponiveis:
 /delete id - apaga um gasto
 /receita - inicia cadastro guiado de receita
 /receita valor descricao opcional - registra uma entrada rapida
-/saldo - mostra saldo real e projetado
 /disponivel - mostra quanto voce pode gastar por dia ate o fim do mes
 /resumo - mostra um dashboard financeiro resumido
 /orcamento - inicia cadastro guiado de orcamento
@@ -61,11 +60,10 @@ Resumo e consultas:
 /dia 22/04/2026 - lista os gastos dessa data
 /grafico - abre menu com graficos por categoria, evolucao, top gastos e mais
 
-Receitas, saldo e planejamento:
+Receitas e planejamento:
 /receita
 /receita valor descricao opcional
 /receitas valor descricao opcional
-/saldo
 /disponivel
 /resumo
 /orcamento
@@ -202,20 +200,6 @@ def format_budget_saved(budget_status: dict[str, object]) -> str:
                 f"{format_currency(float(item['budget']))} ({item['used_percent']}%)"
             )
     return "\n".join(lines)
-
-
-def format_balance(balance: dict[str, object]) -> str:
-    projected_balance = float(balance["projected_balance"])
-    warning = " ATENCAO" if projected_balance < 0 else ""
-    return "\n".join(
-        [
-            f"Saldo atual: {format_currency(float(balance['current_balance']))}",
-            f"Receitas do mes: {format_currency(float(balance['monthly_income']))}",
-            f"Gastos do mes: {format_currency(float(balance['monthly_expenses']))}",
-            f"Gastos fixos previstos: {format_currency(float(balance['fixed_expenses']))}",
-            f"Saldo projetado: {format_currency(projected_balance)}{warning}",
-        ]
-    )
 
 
 def format_available_daily(available: dict[str, object]) -> str:

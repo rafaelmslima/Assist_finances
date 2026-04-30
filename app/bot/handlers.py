@@ -11,7 +11,6 @@ from app.bot.keyboards import (
 from app.bot.commands import (
     HELP_TEXT,
     START_TEXT,
-    format_balance,
     format_budget_saved,
     format_comparison,
     format_available_daily,
@@ -194,20 +193,7 @@ async def add_income(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user = await _get_or_register_user(update)
-    if not user:
-        return
-
-    with SessionLocal() as db:
-        analytics = AnalyticsService(
-            ExpenseRepository(db),
-            IncomeRepository(db),
-            BudgetRepository(db),
-            FixedExpenseRepository(db),
-        )
-        summary = analytics.get_balance(user.id)
-
-    await update.message.reply_text(format_balance(summary))
+    await smart_summary(update, context)
 
 
 async def available_daily(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

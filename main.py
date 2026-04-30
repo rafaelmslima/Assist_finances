@@ -56,7 +56,6 @@ DEFAULT_BOT_COMMANDS = [
     BotCommand("edit", "Editar um gasto pelo ID"),
     BotCommand("delete", "Apagar um gasto pelo ID"),
     BotCommand("receita", "Adicionar uma receita"),
-    BotCommand("saldo", "Ver saldo atual e projetado"),
     BotCommand("disponivel", "Ver quanto pode gastar por dia"),
     BotCommand("resumo", "Ver dashboard financeiro resumido"),
     BotCommand("orcamento", "Definir orcamento mensal ou por categoria"),

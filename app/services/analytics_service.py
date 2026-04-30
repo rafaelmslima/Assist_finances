@@ -33,22 +33,6 @@ class AnalyticsService:
         self.fixed_expense_repository = fixed_expense_repository
         self.alert_service = alert_service or AlertService()
 
-    def get_balance(self, telegram_user_id: int) -> dict[str, object]:
-        start_date, end_date = month_range()
-        monthly_income = self.income_repository.total_by_period(telegram_user_id, start_date, end_date)
-        monthly_expenses = self.expense_repository.total_by_period(telegram_user_id, start_date, end_date)
-        fixed_expenses = self.fixed_expense_repository.total_by_user(telegram_user_id)
-        current_balance = to_money(monthly_income - monthly_expenses)
-        projected_balance = to_money(current_balance - fixed_expenses)
-
-        return {
-            "current_balance": current_balance,
-            "monthly_income": to_money(monthly_income),
-            "monthly_expenses": to_money(monthly_expenses),
-            "fixed_expenses": to_money(fixed_expenses),
-            "projected_balance": projected_balance,
-        }
-
     def get_forecast(self, telegram_user_id: int, target_date: date | None = None) -> dict[str, object]:
         target_date = target_date or date.today()
         start_date, end_date = month_range(target_date)

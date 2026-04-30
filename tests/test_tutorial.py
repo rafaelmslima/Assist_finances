@@ -67,7 +67,13 @@ class TutorialCommandRegistrationTest(unittest.TestCase):
         content = main_py.read_text(encoding="utf-8")
 
         self.assertIn('BotCommand("tutorial"', content)
+        self.assertIn('BotCommand("disponivel"', content)
+        self.assertIn('BotCommand("resumo"', content)
+        self.assertNotIn('BotCommand("saldo"', content)
         self.assertIn('CommandHandler("tutorial"', content)
+        self.assertIn('CommandHandler("disponivel", available_daily)', content)
+        self.assertIn('CommandHandler("resumo", smart_summary)', content)
+        self.assertIn('CommandHandler("saldo", balance)', content)
         self.assertIn("CallbackQueryHandler(tutorial_callback", content)
         self.assertIn('CommandHandler("grafico", chart_menu)', content)
         self.assertIn("CallbackQueryHandler(chart_callback", content)

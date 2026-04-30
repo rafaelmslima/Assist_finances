@@ -13,7 +13,6 @@ Bot de Telegram para controle financeiro pessoal com gastos, receitas, orcamento
 - `/edit id valor categoria descricao`: edita um gasto.
 - `/delete id`: apaga um gasto.
 - `/receita valor descricao` ou `/receitas valor descricao`: registra uma entrada financeira.
-- `/saldo`: mostra saldo atual, receitas do mes, gastos do mes, fixos previstos e saldo projetado.
 - `/disponivel`: mostra quanto ainda da para gastar por dia ate o fim do mes.
 - `/resumo`: mostra dashboard resumido com gasto, saldo, orcamento usado, media diaria, tendencia e alertas.
 - `/orcamento valor`: define o orcamento total do mes atual.
@@ -327,7 +326,7 @@ Depois do deploy, abra `Deployments` ou `Logs` no Railway e procure por:
 5. Envie `/orcamento 500`.
 6. Envie `/fixo 20 teste fixo`.
 7. Reinicie o servico no Railway.
-8. Rode `/mes`, `/saldo` e `/fixos`; os dados devem continuar existindo.
+8. Rode `/mes`, `/resumo` e `/fixos`; os dados devem continuar existindo.
 
 Se os dados sumirem apos restart, o bot provavelmente esta usando SQLite efemero em vez de PostgreSQL. Revise `DATABASE_URL` no servico do bot.
 
@@ -359,7 +358,7 @@ Eles cobrem:
 
 1. Cadastre receita com `/receita 3500 salario`.
 2. Cadastre gasto com `/add 100 alimentacao mercado`.
-3. Confira `/saldo`.
+3. Confira `/resumo`.
 4. Defina `/orcamento 3000` e `/orcamento alimentacao 900`.
 5. Cadastre fixos com `/fixo 120 academia` e `/fixo 800 aluguel`.
 6. Confira `/fixos`.
@@ -391,4 +390,4 @@ Eles cobrem:
 5. Isolamento:
    - Use duas contas diferentes.
    - Registre gastos, receitas, orcamentos e fixos em ambas.
-   - Os comandos `/mes`, `/saldo`, `/previsao`, `/fixos`, `/comparar`, `/edit` e `/delete` devem afetar apenas os dados do usuario atual.
+   - Os comandos `/mes`, `/resumo`, `/disponivel`, `/previsao`, `/fixos`, `/comparar`, `/edit` e `/delete` devem afetar apenas os dados do usuario atual.

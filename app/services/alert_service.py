@@ -5,7 +5,7 @@ class AlertService:
         historical_daily_average = float(analysis.get("historical_daily_average") or 0)
         current_daily_average = float(analysis.get("current_daily_average") or 0)
         if historical_daily_average > 0 and current_daily_average >= historical_daily_average * 1.2:
-            alerts.append("Voce esta gastando acima do seu padrao historico.")
+            alerts.append("Voce esta gastando acima do seu padrao.")
 
         total_budget = analysis.get("total_budget")
         total_forecast = float(analysis.get("total_forecast") or 0)
