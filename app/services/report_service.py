@@ -2,16 +2,19 @@ from calendar import monthrange
 from datetime import date, datetime, time, timedelta
 
 from app.database.models import Expense
-from app.database.repository import ExpenseRepository
+from app.database.repository import ExpenseRepository, SalaryConfigRepository
+from app.services.financial_cycle_service import FinancialCycleService
 from app.utils.money import ZERO, to_money
 
 
 class ReportService:
-    def __init__(self, repository: ExpenseRepository):
+    def __init__(self, repository: ExpenseRepository, salary_config_repository: SalaryConfigRepository | None = None):
         self.repository = repository
+        self.salary_config_repository = salary_config_repository
 
     def get_current_month_summary(self, user_id: int) -> dict[str, object]:
-        start_date, end_date = self._current_month_range()
+        cycle = self._current_cycle(user_id)
+        start_date, end_date = cycle.start_date, cycle.end_date
         totals_by_category = self.repository.totals_by_category(
             user_id=user_id,
             start_date=start_date,
@@ -30,6 +33,9 @@ class ReportService:
             "count": count,
             "month": start_date.month,
             "year": start_date.year,
+            "cycle_start": cycle.start_day,
+            "cycle_end": cycle.end_day,
+            "is_salary_cycle": cycle.is_salary_cycle,
         }
 
     def get_day_summary(self, user_id: int, target_date: date) -> dict[str, object]:
@@ -56,6 +62,13 @@ class ReportService:
         end_of_month = date(now.year, now.month, last_day)
         end_date = datetime.combine(end_of_month + timedelta(days=1), time.min)
         return start_date, end_date
+
+    def _current_cycle(self, user_id: int):
+        if self.salary_config_repository:
+            return FinancialCycleService(self.salary_config_repository).current_cycle(user_id)
+        start_date, end_date = self._current_month_range()
+        from app.services.financial_cycle_service import FinancialCycle
+        return FinancialCycle(start_date=start_date, end_date=end_date, is_salary_cycle=False)
 
     @staticmethod
     def _day_range(target_date: date) -> tuple[datetime, datetime]:

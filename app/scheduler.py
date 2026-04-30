@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram.ext import Application
 
-from app.bot.commands import format_forecast
+from app.bot.commands import format_forecast, format_salary_auto_reloaded
 from app.config import get_settings
 from app.database.repository import (
     BudgetRepository,
@@ -14,11 +14,13 @@ from app.database.repository import (
     ExpenseRepository,
     FixedExpenseRepository,
     IncomeRepository,
+    SalaryConfigRepository,
     UserRepository,
 )
 from app.database.session import SessionLocal
 from app.database.models import User
 from app.services.analytics_service import AnalyticsService
+from app.services.salary_service import SalaryService
 
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,7 @@ async def send_daily_forecasts(application: Application) -> None:
         users = user_repository.list_active_users()
 
     semaphore = asyncio.Semaphore(DAILY_FORECAST_CONCURRENCY)
+    await _auto_reload_due_salaries(application, users, today, semaphore)
     await asyncio.gather(
         *[
             _send_daily_forecast_to_user(application, user, today, semaphore)
@@ -60,6 +63,7 @@ async def _send_daily_forecast_to_user(
                     IncomeRepository(db),
                     BudgetRepository(db),
                     FixedExpenseRepository(db),
+                    SalaryConfigRepository(db),
                 )
                 forecast = analytics.get_forecast(user.id, today)
                 message = format_forecast(forecast, daily=True)
@@ -69,6 +73,42 @@ async def _send_daily_forecast_to_user(
             with SessionLocal() as db:
                 DailyNotificationRepository(db).clear_sent_marker(user.id, today)
             logger.exception("Falha ao enviar previsao diaria para user_id=%s", user.id)
+
+
+async def _auto_reload_due_salaries(
+    application: Application,
+    users: list[User],
+    today: date,
+    semaphore: asyncio.Semaphore,
+) -> None:
+    await asyncio.gather(
+        *[
+            _auto_reload_salary_for_user(application, user, today, semaphore)
+            for user in users
+        ]
+    )
+
+
+async def _auto_reload_salary_for_user(
+    application: Application,
+    user: User,
+    today: date,
+    semaphore: asyncio.Semaphore,
+) -> None:
+    async with semaphore:
+        try:
+            with SessionLocal() as db:
+                income = SalaryService(
+                    SalaryConfigRepository(db),
+                    IncomeRepository(db),
+                ).register_auto_salary_if_due(user.id, today)
+                if not income:
+                    return
+                message = format_salary_auto_reloaded(income.amount)
+
+            await application.bot.send_message(chat_id=user.telegram_chat_id, text=message)
+        except Exception:
+            logger.exception("Falha ao recarregar salario automatico para user_id=%s", user.id)
 
 
 def start_daily_scheduler(application: Application) -> AsyncIOScheduler:

@@ -20,6 +20,7 @@ from app.database.repository import (
     ExpenseRepository,
     FixedExpenseRepository,
     IncomeRepository,
+    SalaryConfigRepository,
     UpdateBroadcastRepository,
     UserRepository,
 )
@@ -33,8 +34,10 @@ from app.services.date_service import month_range, previous_month
 from app.services.expense_service import ExpenseService
 from app.services.fixed_expense_service import FixedExpenseService
 from app.services.income_service import IncomeService
+from app.services.recurring_expense_service import RecurringExpenseService
+from app.services.salary_service import ParsedSalary, SalaryService, SCHEDULE_FIFTH_BUSINESS_DAY, SCHEDULE_FIXED_DAY, fifth_business_day
 from app.services.user_service import TelegramUserData, UserService
-from app.bot.commands import format_spending_insights
+from app.bot.commands import format_recurring_expense_suggestion, format_spending_insights
 from app.bot.keyboards import (
     MAIN_BUTTON_ADD_EXPENSE,
     MAIN_BUTTON_AVAILABLE,
@@ -42,8 +45,12 @@ from app.bot.keyboards import (
     MAIN_BUTTON_HELP,
     MAIN_BUTTON_INSIGHTS,
     MAIN_BUTTON_MONTH,
+    MAIN_BUTTON_SALARY,
     MAIN_BUTTON_TODAY,
+    RECURRING_FIXED_NO_CALLBACK,
+    RECURRING_FIXED_YES_CALLBACK,
     build_main_reply_keyboard,
+    build_recurring_fixed_expense_keyboard,
 )
 from app.utils.validators import (
     ExpenseValidationError,
@@ -92,15 +99,28 @@ class RepositoryWorkflowTest(unittest.TestCase):
         self.assertEqual(
             keyboard.to_dict()["keyboard"],
             [
-                [{"text": MAIN_BUTTON_ADD_EXPENSE}, {"text": MAIN_BUTTON_TODAY}],
-                [{"text": MAIN_BUTTON_MONTH}, {"text": MAIN_BUTTON_CHARTS}],
-                [{"text": MAIN_BUTTON_INSIGHTS}, {"text": MAIN_BUTTON_AVAILABLE}],
-                [{"text": MAIN_BUTTON_HELP}],
+                [{"text": MAIN_BUTTON_ADD_EXPENSE}, {"text": MAIN_BUTTON_SALARY}],
+                [{"text": MAIN_BUTTON_TODAY}, {"text": MAIN_BUTTON_MONTH}],
+                [{"text": MAIN_BUTTON_CHARTS}, {"text": MAIN_BUTTON_INSIGHTS}],
+                [{"text": MAIN_BUTTON_AVAILABLE}, {"text": MAIN_BUTTON_HELP}],
             ],
         )
         self.assertTrue(keyboard.resize_keyboard)
         self.assertTrue(keyboard.is_persistent)
         self.assertFalse(keyboard.one_time_keyboard)
+
+    def test_recurring_fixed_expense_keyboard_uses_expense_id(self):
+        keyboard = build_recurring_fixed_expense_keyboard(123)
+
+        self.assertEqual(
+            keyboard.to_dict()["inline_keyboard"],
+            [
+                [
+                    {"text": "✔ Sim", "callback_data": f"{RECURRING_FIXED_YES_CALLBACK}:123"},
+                    {"text": "❌ Não", "callback_data": f"{RECURRING_FIXED_NO_CALLBACK}:123"},
+                ]
+            ],
+        )
 
     def test_user_creation_reuses_existing_internal_user(self):
         first = self._create_user(100)
@@ -437,6 +457,76 @@ class RepositoryWorkflowTest(unittest.TestCase):
         self.assertIn("Voce ja usou mais de 80% do seu orcamento mensal.", result["alerts"])
         self.assertIn("Seu saldo projetado esta negativo.", result["alerts"])
 
+    def test_salary_cycle_drives_summary_and_available_daily(self):
+        user = self._create_user(809)
+        target_date = date(2026, 4, 10)
+
+        with self.Session() as db:
+            salary_service = SalaryService(SalaryConfigRepository(db), IncomeRepository(db))
+            salary_service.configure_salary(
+                user.id,
+                ParsedSalary(amount=3000, schedule_type=SCHEDULE_FIXED_DAY, pay_day=25),
+                received_on=date(2026, 3, 25),
+            )
+            expense_service = ExpenseService(ExpenseRepository(db))
+            in_cycle = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=600, category="mercado", description=None),
+            )
+            out_of_cycle = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=999, category="lazer", description=None),
+            )
+            extra_income = IncomeService(IncomeRepository(db)).add_income(
+                user.id,
+                ParsedIncome(amount=200, description="extra"),
+            )
+            in_cycle.created_at = datetime(2026, 4, 5)
+            out_of_cycle.created_at = datetime(2026, 3, 10)
+            extra_income.created_at = datetime(2026, 4, 6)
+            db.commit()
+
+            summary = ReportService(
+                ExpenseRepository(db),
+                SalaryConfigRepository(db),
+            ).get_current_month_summary(user.id)
+            available = AnalyticsService(
+                ExpenseRepository(db),
+                IncomeRepository(db),
+                BudgetRepository(db),
+                FixedExpenseRepository(db),
+                SalaryConfigRepository(db),
+            ).get_available_daily_amount(user.id, target_date)
+
+        self.assertEqual(summary["total"], 600)
+        self.assertTrue(summary["is_salary_cycle"])
+        self.assertEqual(summary["cycle_start"], date(2026, 3, 25))
+        self.assertEqual(summary["cycle_end"], date(2026, 4, 23))
+        self.assertEqual(available["monthly_income"], 3200)
+        self.assertEqual(available["monthly_expenses"], 600)
+
+    def test_salary_auto_reload_uses_fixed_day_and_avoids_duplicate(self):
+        user = self._create_user(810)
+
+        with self.Session() as db:
+            salary_service = SalaryService(SalaryConfigRepository(db), IncomeRepository(db))
+            salary_service.configure_salary(
+                user.id,
+                ParsedSalary(amount=3000, schedule_type=SCHEDULE_FIXED_DAY, pay_day=31),
+                received_on=date(2026, 1, 31),
+            )
+            first = salary_service.register_auto_salary_if_due(user.id, date(2026, 2, 28))
+            second = salary_service.register_auto_salary_if_due(user.id, date(2026, 2, 28))
+            config = SalaryConfigRepository(db).get_by_user(user.id)
+
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        self.assertEqual(config.current_cycle_start, date(2026, 2, 28))
+        self.assertEqual(config.last_auto_salary_on, date(2026, 2, 28))
+
+    def test_fifth_business_day_ignores_weekends(self):
+        self.assertEqual(fifth_business_day(2026, 5), date(2026, 5, 7))
+
     def test_spending_insights_detects_weekend_category_growth_and_high_trend(self):
         user = self._create_user(806)
         target_date = date(2026, 4, 15)
@@ -487,6 +577,61 @@ class RepositoryWorkflowTest(unittest.TestCase):
         self.assertIn("Você gasta mais aos fins de semana", message)
         self.assertIn("alimentacao aumentou 30%", message)
         self.assertIn("Seus gastos estão acima do normal", message)
+
+    def test_recurring_expense_suggestion_detects_monthly_similar_expense(self):
+        user = self._create_user(807)
+
+        with self.Session() as db:
+            expense_service = ExpenseService(ExpenseRepository(db))
+            previous = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=39.90, category="streaming", description="Netflix"),
+            )
+            current = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=40.90, category="streaming", description="Netflix"),
+            )
+            previous.created_at = datetime(2026, 3, 10)
+            current.created_at = datetime(2026, 4, 10)
+            db.commit()
+
+            suggestion = RecurringExpenseService(
+                ExpenseRepository(db),
+                FixedExpenseRepository(db),
+            ).detect_for_expense(user.id, current)
+
+        self.assertIsNotNone(suggestion)
+        self.assertEqual(suggestion.label, "Netflix")
+        self.assertEqual(suggestion.occurrences, 2)
+        self.assertIn("Netflix - R$ 40,90", format_recurring_expense_suggestion(suggestion))
+
+    def test_recurring_expense_suggestion_skips_existing_similar_fixed_expense(self):
+        user = self._create_user(808)
+
+        with self.Session() as db:
+            expense_service = ExpenseService(ExpenseRepository(db))
+            previous = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=39.90, category="streaming", description="Netflix"),
+            )
+            current = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=39.90, category="streaming", description="Netflix"),
+            )
+            previous.created_at = datetime(2026, 3, 10)
+            current.created_at = datetime(2026, 4, 10)
+            FixedExpenseService(FixedExpenseRepository(db)).add_fixed_expense(
+                user.id,
+                ParsedFixedExpense(amount=39.90, category="streaming", description="Netflix"),
+            )
+            db.commit()
+
+            suggestion = RecurringExpenseService(
+                ExpenseRepository(db),
+                FixedExpenseRepository(db),
+            ).detect_for_expense(user.id, current)
+
+        self.assertIsNone(suggestion)
 
 
 class SchedulerWorkflowTest(unittest.TestCase):

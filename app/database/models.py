@@ -55,6 +55,11 @@ class User(Base):
     budgets: Mapped[list["Budget"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     fixed_expenses: Mapped[list["FixedExpense"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     daily_notifications: Mapped[list["DailyNotification"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    salary_config: Mapped["SalaryConfig | None"] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
 
 class UpdateBroadcast(Base):
@@ -90,6 +95,31 @@ class Income(Base):
         nullable=False,
     )
     user: Mapped["User"] = relationship(back_populates="incomes")
+
+
+class SalaryConfig(Base):
+    __tablename__ = "salary_configs"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_salary_config_user"),
+        Index("ix_salary_configs_active", "is_active"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    schedule_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    pay_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    current_cycle_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    last_auto_salary_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.now,
+        onupdate=datetime.now,
+        nullable=False,
+    )
+    user: Mapped["User"] = relationship(back_populates="salary_config")
 
 
 class Budget(Base):

@@ -14,6 +14,9 @@ TUTORIAL_BACK_CALLBACK = f"{TUTORIAL_PREFIX}:back"
 TUTORIAL_EXIT_CALLBACK = f"{TUTORIAL_PREFIX}:exit"
 CHART_BACK_CALLBACK = f"{CHART_PREFIX}:back"
 CHART_CLOSE_CALLBACK = f"{CHART_PREFIX}:close"
+RECURRING_FIXED_PREFIX = "recurringfixed"
+RECURRING_FIXED_YES_CALLBACK = f"{RECURRING_FIXED_PREFIX}:yes"
+RECURRING_FIXED_NO_CALLBACK = f"{RECURRING_FIXED_PREFIX}:no"
 
 TUTORIAL_TOPICS = [
     ("➕ Registrar gasto", "expense"),
@@ -38,6 +41,7 @@ CHART_OPTIONS = [
 ]
 
 MAIN_BUTTON_ADD_EXPENSE = "Salvar gasto"
+MAIN_BUTTON_SALARY = "Salario"
 MAIN_BUTTON_TODAY = "Hoje"
 MAIN_BUTTON_MONTH = "Resumo do mes"
 MAIN_BUTTON_CHARTS = "Graficos"
@@ -49,10 +53,10 @@ MAIN_BUTTON_HELP = "Ajuda"
 def build_main_reply_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [MAIN_BUTTON_ADD_EXPENSE, MAIN_BUTTON_TODAY],
-            [MAIN_BUTTON_MONTH, MAIN_BUTTON_CHARTS],
-            [MAIN_BUTTON_INSIGHTS, MAIN_BUTTON_AVAILABLE],
-            [MAIN_BUTTON_HELP],
+            [MAIN_BUTTON_ADD_EXPENSE, MAIN_BUTTON_SALARY],
+            [MAIN_BUTTON_TODAY, MAIN_BUTTON_MONTH],
+            [MAIN_BUTTON_CHARTS, MAIN_BUTTON_INSIGHTS],
+            [MAIN_BUTTON_AVAILABLE, MAIN_BUTTON_HELP],
         ],
         resize_keyboard=True,
         is_persistent=True,
@@ -156,6 +160,17 @@ def build_chart_result_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton("🔙 Voltar aos gráficos", callback_data=CHART_BACK_CALLBACK),
                 InlineKeyboardButton("❌ Fechar", callback_data=CHART_CLOSE_CALLBACK),
+            ]
+        ]
+    )
+
+
+def build_recurring_fixed_expense_keyboard(expense_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("✔ Sim", callback_data=f"{RECURRING_FIXED_YES_CALLBACK}:{expense_id}"),
+                InlineKeyboardButton("❌ Não", callback_data=f"{RECURRING_FIXED_NO_CALLBACK}:{expense_id}"),
             ]
         ]
     )

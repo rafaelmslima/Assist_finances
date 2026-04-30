@@ -5,7 +5,7 @@ from sqlalchemy import Select, delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.database.models import Budget, DailyNotification, Expense, FixedExpense, Income, UpdateBroadcast, User
+from app.database.models import Budget, DailyNotification, Expense, FixedExpense, Income, SalaryConfig, UpdateBroadcast, User
 from app.utils.money import to_money
 
 
@@ -280,6 +280,7 @@ class IncomeRepository:
         user_id: int,
         amount: Decimal | float | int | str,
         description: str | None = None,
+        created_at: datetime | None = None,
     ) -> Income:
         income = Income(
             user_id=user_id,
@@ -287,6 +288,8 @@ class IncomeRepository:
             amount=to_money(amount),
             description=description,
         )
+        if created_at is not None:
+            income.created_at = created_at
         self.db.add(income)
         self.db.commit()
         self.db.refresh(income)
@@ -304,6 +307,74 @@ class IncomeRepository:
             Income.created_at < end_date,
         )
         return to_money(self.db.scalar(statement))
+
+
+class SalaryConfigRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_by_user(self, user_id: int) -> SalaryConfig | None:
+        statement = select(SalaryConfig).where(SalaryConfig.user_id == user_id)
+        return self.db.scalar(statement)
+
+    def upsert(
+        self,
+        user_id: int,
+        amount: Decimal | float | int | str,
+        schedule_type: str,
+        pay_day: int | None,
+        current_cycle_start: date | None,
+        is_active: bool = True,
+    ) -> SalaryConfig:
+        salary_config = self.get_by_user(user_id)
+        if not salary_config:
+            salary_config = SalaryConfig(
+                user_id=user_id,
+                telegram_user_id=_telegram_user_id_for_user_id(self.db, user_id),
+                amount=to_money(amount),
+                schedule_type=schedule_type,
+                pay_day=pay_day,
+                is_active=is_active,
+                current_cycle_start=current_cycle_start,
+            )
+            self.db.add(salary_config)
+        else:
+            salary_config.amount = to_money(amount)
+            salary_config.schedule_type = schedule_type
+            salary_config.pay_day = pay_day
+            salary_config.is_active = is_active
+            if current_cycle_start is not None:
+                salary_config.current_cycle_start = current_cycle_start
+
+        self.db.commit()
+        self.db.refresh(salary_config)
+        return salary_config
+
+    def set_cycle_start(self, user_id: int, cycle_start: date) -> SalaryConfig | None:
+        salary_config = self.get_by_user(user_id)
+        if not salary_config:
+            return None
+        salary_config.current_cycle_start = cycle_start
+        self.db.commit()
+        self.db.refresh(salary_config)
+        return salary_config
+
+    def set_last_auto_salary_on(self, user_id: int, salary_on: date) -> SalaryConfig | None:
+        salary_config = self.get_by_user(user_id)
+        if not salary_config:
+            return None
+        salary_config.last_auto_salary_on = salary_on
+        self.db.commit()
+        self.db.refresh(salary_config)
+        return salary_config
+
+    def list_active(self) -> list[SalaryConfig]:
+        statement = (
+            select(SalaryConfig)
+            .where(SalaryConfig.is_active.is_(True))
+            .order_by(SalaryConfig.user_id.asc())
+        )
+        return list(self.db.scalars(statement).all())
 
 
 class BudgetRepository:

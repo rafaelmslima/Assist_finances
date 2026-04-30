@@ -9,9 +9,11 @@ from app.bot.commands import (
     format_expense_saved,
     format_fixed_expense_saved,
     format_income_saved,
+    format_salary_saved,
 )
 from app.bot.handlers import (
     _get_or_register_user,
+    _send_recurring_expense_suggestion,
     add_expense,
     add_fixed_expense,
     add_income,
@@ -22,18 +24,21 @@ from app.bot.keyboards import (
     CATEGORY_PREFIX,
     CONFIRM_EXPENSE_CALLBACK,
     MAIN_BUTTON_ADD_EXPENSE,
+    MAIN_BUTTON_SALARY,
     NEW_CATEGORY_CALLBACK,
     OTHER_CATEGORY_CALLBACK,
     build_expense_category_keyboard,
     build_expense_confirmation_keyboard,
+    build_main_reply_keyboard,
 )
-from app.database.repository import BudgetRepository, ExpenseRepository, FixedExpenseRepository, IncomeRepository
+from app.database.repository import BudgetRepository, ExpenseRepository, FixedExpenseRepository, IncomeRepository, SalaryConfigRepository
 from app.database.session import SessionLocal
 from app.services.budget_service import BudgetService
 from app.services.expense_service import ExpenseService
 from app.services.fixed_expense_service import FixedExpenseService
 from app.services.income_service import IncomeService
 from app.services.report_service import ReportService
+from app.services.salary_service import ParsedSalary, SalaryService, SCHEDULE_FIFTH_BUSINESS_DAY, SCHEDULE_FIXED_DAY, schedule_label
 from app.utils.validators import (
     ExpenseValidationError,
     ParsedBudget,
@@ -59,6 +64,9 @@ class State(IntEnum):
     FIXED_DESCRIPTION = 10
     BUDGET_CATEGORY = 11
     BUDGET_AMOUNT = 12
+    SALARY_AMOUNT = 13
+    SALARY_SCHEDULE = 14
+    SALARY_PAY_DAY = 15
 
 
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -209,12 +217,13 @@ async def confirm_add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE
     with SessionLocal() as db:
         repository = ExpenseRepository(db)
         expense = ExpenseService(repository).add_expense(data["user_id"], parsed)
-        summary = ReportService(repository).get_current_month_summary(data["user_id"])
+        summary = ReportService(repository, SalaryConfigRepository(db)).get_current_month_summary(data["user_id"])
 
     await query.edit_message_text(
         f"{format_expense_saved(expense, 'registrado')}\n"
         f"Total gasto no mes: {format_currency(float(summary['total']))}."
     )
+    await _send_recurring_expense_suggestion(query.message, data["user_id"], expense)
     return ConversationHandler.END
 
 
@@ -236,6 +245,93 @@ async def start_income(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     context.user_data["guided"] = {"type": "income", "user_id": user.id}
     await update.message.reply_text("Qual o valor da receita? Exemplo: 3000\n\nUse /cancelar para cancelar.")
     return State.INCOME_AMOUNT
+
+
+async def start_salary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if context.args:
+        from app.bot.handlers import set_salary
+
+        await set_salary(update, context)
+        return ConversationHandler.END
+
+    user = await _get_or_register_user(update)
+    if not user:
+        return ConversationHandler.END
+
+    context.user_data["guided"] = {"type": "salary", "user_id": user.id}
+    await update.message.reply_text("Qual o valor do seu salario? Exemplo: 3500\n\nUse /cancelar para cancelar.")
+    return State.SALARY_AMOUNT
+
+
+async def receive_salary_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        amount = parse_amount(update.message.text.strip(), command="/salario")
+    except ExpenseValidationError as exc:
+        await update.message.reply_text(f"{exc}\n\nDigite o valor novamente ou use /cancelar.")
+        return State.SALARY_AMOUNT
+
+    context.user_data["guided"]["amount"] = amount
+    await update.message.reply_text(
+        "Como voce costuma receber?\n"
+        "Digite 1 para dia fixo do mes.\n"
+        "Digite 2 para 5o dia util."
+    )
+    return State.SALARY_SCHEDULE
+
+
+async def receive_salary_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    raw_value = update.message.text.strip().lower()
+    if raw_value in {"2", "5", "5o", "quinto", "quinto dia util"}:
+        context.user_data["guided"]["schedule_type"] = SCHEDULE_FIFTH_BUSINESS_DAY
+        context.user_data["guided"]["pay_day"] = None
+        return await _save_guided_salary(update, context)
+
+    if raw_value in {"1", "dia", "dia fixo", "fixo"}:
+        context.user_data["guided"]["schedule_type"] = SCHEDULE_FIXED_DAY
+        await update.message.reply_text("Qual dia do mes? Exemplo: 25")
+        return State.SALARY_PAY_DAY
+
+    await update.message.reply_text("Digite 1 para dia fixo ou 2 para 5o dia util.")
+    return State.SALARY_SCHEDULE
+
+
+async def receive_salary_pay_day(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        pay_day = int(update.message.text.strip())
+    except ValueError:
+        await update.message.reply_text("Digite um dia valido entre 1 e 31.")
+        return State.SALARY_PAY_DAY
+
+    if pay_day < 1 or pay_day > 31:
+        await update.message.reply_text("Digite um dia valido entre 1 e 31.")
+        return State.SALARY_PAY_DAY
+
+    context.user_data["guided"]["pay_day"] = pay_day
+    return await _save_guided_salary(update, context)
+
+
+async def _save_guided_salary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    data = context.user_data.pop("guided")
+    parsed_salary = ParsedSalary(
+        amount=data["amount"],
+        schedule_type=data["schedule_type"],
+        pay_day=data.get("pay_day"),
+    )
+
+    with SessionLocal() as db:
+        salary_config, _income = SalaryService(
+            SalaryConfigRepository(db),
+            IncomeRepository(db),
+        ).configure_salary(data["user_id"], parsed_salary)
+
+    await update.message.reply_text(
+        format_salary_saved(
+            salary_config.amount,
+            schedule_label(salary_config.schedule_type, salary_config.pay_day),
+        ),
+        reply_markup=build_main_reply_keyboard(),
+    )
+    return ConversationHandler.END
 
 
 async def receive_income_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -390,7 +486,7 @@ async def receive_budget_amount(update: Update, context: ContextTypes.DEFAULT_TY
     parsed = ParsedBudget(amount=amount, category=data["category"])
 
     with SessionLocal() as db:
-        budget_service = BudgetService(BudgetRepository(db), ExpenseRepository(db))
+        budget_service = BudgetService(BudgetRepository(db), ExpenseRepository(db), SalaryConfigRepository(db))
         budget_service.set_budget(data["user_id"], parsed)
         status = budget_service.get_budget_status(data["user_id"])
 
@@ -434,6 +530,18 @@ def build_conversation_handlers() -> list[ConversationHandler]:
                     CommandHandler("pular", skip_income_description),
                     MessageHandler(text_filter, receive_income_description),
                 ],
+            },
+            fallbacks=[CommandHandler("cancelar", cancel_conversation)],
+        ),
+        ConversationHandler(
+            entry_points=[
+                CommandHandler("salario", start_salary),
+                MessageHandler(filters.Regex(f"^{MAIN_BUTTON_SALARY}$"), start_salary),
+            ],
+            states={
+                State.SALARY_AMOUNT: [MessageHandler(text_filter, receive_salary_amount)],
+                State.SALARY_SCHEDULE: [MessageHandler(text_filter, receive_salary_schedule)],
+                State.SALARY_PAY_DAY: [MessageHandler(text_filter, receive_salary_pay_day)],
             },
             fallbacks=[CommandHandler("cancelar", cancel_conversation)],
         ),

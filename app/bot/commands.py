@@ -16,6 +16,7 @@ PUBLIC_BOT_COMMANDS = [
     ("edit", "Editar um gasto pelo ID"),
     ("delete", "Apagar um gasto pelo ID"),
     ("receita", "Adicionar uma receita"),
+    ("salario", "Configurar salario e ciclo financeiro"),
     ("disponivel", "Ver quanto pode gastar por dia"),
     ("resumo", "Ver dashboard financeiro resumido"),
     ("insights", "Ver padroes automaticos de gastos"),
@@ -48,6 +49,8 @@ START_COMMAND_LINES = [
     "/delete id - apaga um gasto",
     "/receita - inicia cadastro guiado de receita",
     "/receita valor descricao opcional - registra uma entrada rapida",
+    "/salario - configura salario e inicio do ciclo financeiro",
+    "/salario valor - registra salario e inicia novo ciclo hoje",
     "/disponivel - mostra quanto voce pode gastar por dia ate o fim do mes",
     "/resumo - mostra um dashboard financeiro resumido",
     "/insights - mostra padroes automaticos de gastos",
@@ -102,6 +105,8 @@ Receitas e planejamento:
 /receita
 /receita valor descricao opcional
 /receitas valor descricao opcional
+/salario
+/salario valor
 /disponivel
 /resumo
 /insights
@@ -161,12 +166,17 @@ def format_month_summary(summary: dict[str, object]) -> str:
     count = int(summary["count"])
     month = int(summary["month"])
     year = int(summary["year"])
+    title = f"Resumo de {month:02d}/{year}"
+    if summary.get("is_salary_cycle"):
+        cycle_start = summary["cycle_start"]
+        cycle_end = summary["cycle_end"]
+        title = f"Resumo do ciclo {cycle_start:%d/%m} a {cycle_end:%d/%m}"
 
     if not categories:
-        return f"Voce ainda nao registrou gastos em {month:02d}/{year}."
+        return f"Voce ainda nao registrou gastos em {title.replace('Resumo de ', '').replace('Resumo do ciclo ', '')}."
 
     lines = [
-        f"Resumo de {month:02d}/{year}",
+        title,
         f"Total gasto: {format_currency(total)}",
         f"Lancamentos: {count}",
         "",
@@ -219,6 +229,20 @@ def format_expense_saved(expense: Expense, action: str) -> str:
 def format_income_saved(income: Income) -> str:
     description = f" ({income.description})" if income.description else ""
     return f"Receita registrada: #{income.id} - {format_currency(income.amount)}{description}."
+
+
+def format_salary_saved(amount: object, schedule_label: str | None = None) -> str:
+    lines = [
+        f"Salario configurado: {format_currency(amount)}",
+        "Seu novo ciclo financeiro comecou hoje.",
+    ]
+    if schedule_label:
+        lines.append(f"Recarga automatica: {schedule_label}.")
+    return "\n".join(lines)
+
+
+def format_salary_auto_reloaded(amount: object) -> str:
+    return f"Salario recarregado automaticamente: {format_currency(amount)}"
 
 
 def format_budget_saved(budget_status: dict[str, object]) -> str:
@@ -376,6 +400,20 @@ def format_fixed_expense_saved(fixed_expense: FixedExpense) -> str:
     return (
         f"Gasto fixo cadastrado: #{fixed_expense.id} - "
         f"{format_currency(fixed_expense.amount)} em {fixed_expense.category}{description}."
+    )
+
+
+def format_recurring_expense_suggestion(suggestion: object) -> str:
+    label = getattr(suggestion, "label", None) or getattr(suggestion, "category")
+    amount = getattr(suggestion, "amount")
+    return "\n".join(
+        [
+            "⚠️ Detectamos um gasto recorrente:",
+            "",
+            f"{label} - {format_currency(amount)}",
+            "",
+            "Deseja adicionar como gasto fixo?",
+        ]
     )
 
 

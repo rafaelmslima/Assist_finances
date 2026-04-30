@@ -1,15 +1,15 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
-from app.database.repository import BudgetRepository, ExpenseRepository, FixedExpenseRepository, IncomeRepository
+from app.database.repository import BudgetRepository, ExpenseRepository, FixedExpenseRepository, IncomeRepository, SalaryConfigRepository
 from app.services.alert_service import AlertService
 from app.services.date_service import (
     days_in_month,
     elapsed_month_days,
     month_range,
     previous_month,
-    remaining_month_days,
 )
+from app.services.financial_cycle_service import FinancialCycleService
 from app.utils.money import ZERO, to_money
 
 
@@ -36,27 +36,30 @@ class AnalyticsService:
         income_repository: IncomeRepository,
         budget_repository: BudgetRepository,
         fixed_expense_repository: FixedExpenseRepository,
+        salary_config_repository: SalaryConfigRepository | None = None,
         alert_service: AlertService | None = None,
     ):
         self.expense_repository = expense_repository
         self.income_repository = income_repository
         self.budget_repository = budget_repository
         self.fixed_expense_repository = fixed_expense_repository
+        self.salary_config_repository = salary_config_repository
         self.alert_service = alert_service or AlertService()
 
     def get_forecast(self, telegram_user_id: int, target_date: date | None = None) -> dict[str, object]:
         target_date = target_date or date.today()
-        start_date, end_date = month_range(target_date)
+        cycle = self._current_cycle(telegram_user_id, target_date)
+        start_date, end_date = cycle.start_date, cycle.end_date
         current_total = self.expense_repository.total_by_period(telegram_user_id, start_date, end_date)
         current_categories = self.expense_repository.totals_by_category(telegram_user_id, start_date, end_date)
         monthly_income = self.income_repository.total_by_period(telegram_user_id, start_date, end_date)
         fixed_expenses = self.fixed_expense_repository.total_by_user(telegram_user_id)
-        total_budget = self.budget_repository.get_total_budget(telegram_user_id, target_date)
-        category_budgets = self.budget_repository.get_category_budgets(telegram_user_id, target_date)
+        total_budget = self.budget_repository.get_total_budget(telegram_user_id, cycle.start_day)
+        category_budgets = self.budget_repository.get_category_budgets(telegram_user_id, cycle.start_day)
 
         historical_daily_average = self._historical_daily_average(telegram_user_id, target_date)
-        current_daily_average = current_total / elapsed_month_days(target_date)
-        projected_variable_expenses = current_daily_average * days_in_month(target_date)
+        current_daily_average = current_total / cycle.elapsed_days(target_date)
+        projected_variable_expenses = current_daily_average * cycle.total_days()
         total_forecast = projected_variable_expenses + fixed_expenses
         projected_balance = monthly_income - total_forecast
         current_budget_usage_percent = (
@@ -100,13 +103,14 @@ class AnalyticsService:
         target_date: date | None = None,
     ) -> dict[str, object]:
         target_date = target_date or date.today()
-        start_date, end_date = month_range(target_date)
+        cycle = self._current_cycle(telegram_user_id, target_date)
+        start_date, end_date = cycle.start_date, cycle.end_date
         monthly_income = self.income_repository.total_by_period(telegram_user_id, start_date, end_date)
         monthly_expenses = self.expense_repository.total_by_period(telegram_user_id, start_date, end_date)
         fixed_expenses = self.fixed_expense_repository.total_by_user(telegram_user_id)
-        days_remaining = remaining_month_days(target_date)
+        days_remaining = cycle.remaining_days(target_date)
         historical_daily_average = self._historical_daily_average(telegram_user_id, target_date)
-        current_daily_average = monthly_expenses / elapsed_month_days(target_date)
+        current_daily_average = monthly_expenses / cycle.elapsed_days(target_date)
         daily_excess = max(current_daily_average - historical_daily_average, ZERO) if historical_daily_average > 0 else ZERO
         remaining_balance = monthly_income - monthly_expenses - fixed_expenses
         daily_amount = (remaining_balance / days_remaining) - daily_excess
@@ -129,15 +133,16 @@ class AnalyticsService:
         target_date: date | None = None,
     ) -> dict[str, object]:
         target_date = target_date or date.today()
-        start_date, end_date = month_range(target_date)
+        cycle = self._current_cycle(telegram_user_id, target_date)
+        start_date, end_date = cycle.start_date, cycle.end_date
         monthly_income = self.income_repository.total_by_period(telegram_user_id, start_date, end_date)
         monthly_expenses = self.expense_repository.total_by_period(telegram_user_id, start_date, end_date)
         fixed_expenses = self.fixed_expense_repository.total_by_user(telegram_user_id)
-        total_budget = self.budget_repository.get_total_budget(telegram_user_id, target_date)
+        total_budget = self.budget_repository.get_total_budget(telegram_user_id, cycle.start_day)
         current_balance = monthly_income - monthly_expenses
         projected_balance = current_balance - fixed_expenses
         historical_daily_average = self._historical_daily_average(telegram_user_id, target_date)
-        current_daily_average = monthly_expenses / elapsed_month_days(target_date)
+        current_daily_average = monthly_expenses / cycle.elapsed_days(target_date)
         budget_used_percent = (
             round((float(monthly_expenses) / float(total_budget.amount)) * 100, 1)
             if total_budget and total_budget.amount > 0
@@ -150,7 +155,7 @@ class AnalyticsService:
             "total_budget": total_budget.amount if total_budget else None,
             "current_budget_usage_percent": budget_used_percent,
             "total_forecast": to_money(
-                (current_daily_average * days_in_month(target_date)) + fixed_expenses,
+                (current_daily_average * cycle.total_days()) + fixed_expenses,
             ),
             "fixed_expenses": to_money(fixed_expenses),
             "monthly_income": to_money(monthly_income),
@@ -168,8 +173,10 @@ class AnalyticsService:
         }
 
     def compare_with_previous_month(self, telegram_user_id: int) -> dict[str, object]:
-        current_start, current_end = month_range()
-        previous_start, previous_end = month_range(previous_month())
+        current_cycle = self._current_cycle(telegram_user_id, date.today())
+        previous_cycle = self._previous_cycle(telegram_user_id, date.today())
+        current_start, current_end = current_cycle.start_date, current_cycle.end_date
+        previous_start, previous_end = previous_cycle.start_date, previous_cycle.end_date
         current_total = self.expense_repository.total_by_period(telegram_user_id, current_start, current_end)
         previous_total = self.expense_repository.total_by_period(telegram_user_id, previous_start, previous_end)
         current_categories = self.expense_repository.totals_by_category(telegram_user_id, current_start, current_end)
@@ -198,8 +205,10 @@ class AnalyticsService:
         target_date: date | None = None,
     ) -> dict[str, object]:
         target_date = target_date or date.today()
-        current_start, current_end = month_range(target_date)
-        previous_start, previous_end = month_range(previous_month(target_date))
+        current_cycle = self._current_cycle(telegram_user_id, target_date)
+        previous_cycle = self._previous_cycle(telegram_user_id, target_date)
+        current_start, current_end = current_cycle.start_date, current_cycle.end_date
+        previous_start, previous_end = previous_cycle.start_date, previous_cycle.end_date
         history_start = _months_ago(target_date, 6)
 
         historical_expenses = self.expense_repository.list_by_period(
@@ -212,7 +221,7 @@ class AnalyticsService:
             current_start,
             current_end,
         )
-        current_daily_average = current_total / elapsed_month_days(target_date)
+        current_daily_average = current_total / current_cycle.elapsed_days(target_date)
         historical_daily_average = self._historical_daily_average(telegram_user_id, target_date)
 
         current_categories = self.expense_repository.totals_by_category(
@@ -247,6 +256,19 @@ class AnalyticsService:
         }
 
     def _historical_daily_average(self, telegram_user_id: int, target_date: date) -> Decimal:
+        current_cycle = self._current_cycle(telegram_user_id, target_date)
+        if current_cycle.is_salary_cycle:
+            totals = []
+            cursor_end = current_cycle.start_date
+            for _ in range(3):
+                cursor_start = cursor_end - timedelta(days=30)
+                total = self.expense_repository.total_by_period(telegram_user_id, cursor_start, cursor_end)
+                if total > 0:
+                    totals.append(total / 30)
+                cursor_end = cursor_start
+            if totals:
+                return sum(totals, ZERO) / len(totals)
+
         totals = []
         cursor = previous_month(target_date)
         for _ in range(3):
@@ -260,6 +282,26 @@ class AnalyticsService:
             total = self.expense_repository.total_by_period(telegram_user_id, start_date, end_date)
             return total / elapsed_month_days(target_date) if total > 0 else ZERO
         return sum(totals, ZERO) / len(totals)
+
+    def _current_cycle(self, telegram_user_id: int, target_date: date):
+        if self.salary_config_repository:
+            return FinancialCycleService(self.salary_config_repository).current_cycle(
+                telegram_user_id,
+                target_date,
+            )
+        start_date, end_date = month_range(target_date)
+        from app.services.financial_cycle_service import FinancialCycle
+        return FinancialCycle(start_date=start_date, end_date=end_date, is_salary_cycle=False)
+
+    def _previous_cycle(self, telegram_user_id: int, target_date: date):
+        if self.salary_config_repository:
+            return FinancialCycleService(self.salary_config_repository).previous_cycle(
+                telegram_user_id,
+                target_date,
+            )
+        previous_start, previous_end = month_range(previous_month(target_date))
+        from app.services.financial_cycle_service import FinancialCycle
+        return FinancialCycle(start_date=previous_start, end_date=previous_end, is_salary_cycle=False)
 
     def _historical_category_daily_averages(
         self,

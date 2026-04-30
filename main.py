@@ -11,7 +11,9 @@ from app.bot.keyboards import (
     MAIN_BUTTON_HELP,
     MAIN_BUTTON_INSIGHTS,
     MAIN_BUTTON_MONTH,
+    MAIN_BUTTON_SALARY,
     MAIN_BUTTON_TODAY,
+    RECURRING_FIXED_PREFIX,
 )
 from app.bot.handlers import (
     add_expense,
@@ -31,7 +33,9 @@ from app.bot.handlers import (
     forecast,
     help_command,
     month_summary,
+    recurring_fixed_expense_callback,
     set_budget,
+    set_salary,
     smart_summary,
     spending_insights,
     start,
@@ -112,6 +116,7 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("edit", edit_expense))
     application.add_handler(CommandHandler("delete", delete_expense))
     application.add_handler(CommandHandler(["receita", "receitas"], add_income))
+    application.add_handler(CommandHandler("salario", set_salary))
     application.add_handler(CommandHandler("saldo", balance))
     application.add_handler(CommandHandler("disponivel", available_daily))
     application.add_handler(CommandHandler("resumo", smart_summary))
@@ -128,7 +133,9 @@ def build_application() -> Application:
     application.add_handler(CommandHandler("cancelar", cancel_conversation))
     application.add_handler(CallbackQueryHandler(chart_callback, pattern="^chart:"))
     application.add_handler(CallbackQueryHandler(tutorial_callback, pattern="^tutorial:"))
+    application.add_handler(CallbackQueryHandler(recurring_fixed_expense_callback, pattern=f"^{RECURRING_FIXED_PREFIX}:"))
     application.add_handler(MessageHandler(filters.Regex(f"^{MAIN_BUTTON_TODAY}$"), today_summary))
+    application.add_handler(MessageHandler(filters.Regex(f"^{MAIN_BUTTON_SALARY}$"), set_salary))
     application.add_handler(MessageHandler(filters.Regex(f"^{MAIN_BUTTON_MONTH}$"), month_summary))
     application.add_handler(MessageHandler(filters.Regex(f"^{MAIN_BUTTON_CHARTS}$"), chart_menu))
     application.add_handler(MessageHandler(filters.Regex(f"^{MAIN_BUTTON_INSIGHTS}$"), spending_insights))
