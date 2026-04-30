@@ -7,6 +7,7 @@ from app.bot.keyboards import (
     CHART_PREFIX,
     build_chart_menu_keyboard,
     build_chart_result_keyboard,
+    build_main_reply_keyboard,
 )
 from app.bot.commands import (
     HELP_TEXT,
@@ -98,11 +99,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = await _get_or_register_user(update)
     if not user:
         return
-    await update.message.reply_text(START_TEXT)
+    await update.message.reply_text(START_TEXT, reply_markup=build_main_reply_keyboard())
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(HELP_TEXT)
+    await update.message.reply_text(HELP_TEXT, reply_markup=build_main_reply_keyboard())
 
 
 def _is_admin(telegram_user_id: int) -> bool:
@@ -494,5 +495,6 @@ async def chart_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "Comando nao reconhecido. Use /help para ver os comandos disponiveis."
+        "Comando nao reconhecido. Use /help para ver os comandos disponiveis.",
+        reply_markup=build_main_reply_keyboard(),
     )

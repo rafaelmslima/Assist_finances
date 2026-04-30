@@ -1,4 +1,4 @@
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 
 
 CATEGORY_PAGE_SIZE = 8
@@ -36,6 +36,20 @@ CHART_OPTIONS = [
     ("🎯 Orçamento x gasto", "budget"),
     ("📌 Fixos x variáveis", "fixed_variable"),
 ]
+
+
+def build_main_reply_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [
+            ["/add", "/hoje"],
+            ["/mes", "/grafico"],
+            ["/insights", "/disponivel"],
+            ["/help"],
+        ],
+        resize_keyboard=True,
+        is_persistent=True,
+        one_time_keyboard=False,
+    )
 
 
 def build_expense_category_keyboard(categories: list[str], page: int = 0) -> InlineKeyboardMarkup:

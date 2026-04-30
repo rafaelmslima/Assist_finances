@@ -35,6 +35,7 @@ from app.services.fixed_expense_service import FixedExpenseService
 from app.services.income_service import IncomeService
 from app.services.user_service import TelegramUserData, UserService
 from app.bot.commands import format_spending_insights
+from app.bot.keyboards import build_main_reply_keyboard
 from app.utils.validators import (
     ExpenseValidationError,
     ParsedBudget,
@@ -75,6 +76,22 @@ class RepositoryWorkflowTest(unittest.TestCase):
                     username=f"user_{telegram_user_id}",
                 )
             )
+
+    def test_main_reply_keyboard_has_essential_commands(self):
+        keyboard = build_main_reply_keyboard()
+
+        self.assertEqual(
+            keyboard.to_dict()["keyboard"],
+            [
+                [{"text": "/add"}, {"text": "/hoje"}],
+                [{"text": "/mes"}, {"text": "/grafico"}],
+                [{"text": "/insights"}, {"text": "/disponivel"}],
+                [{"text": "/help"}],
+            ],
+        )
+        self.assertTrue(keyboard.resize_keyboard)
+        self.assertTrue(keyboard.is_persistent)
+        self.assertFalse(keyboard.one_time_keyboard)
 
     def test_user_creation_reuses_existing_internal_user(self):
         first = self._create_user(100)
