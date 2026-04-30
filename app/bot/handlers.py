@@ -145,7 +145,10 @@ async def updates_off(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     with SessionLocal() as db:
         UserRepository(db).set_receive_updates_notifications(user.id, False)
 
-    await update.message.reply_text("Notificacoes de novidades desativadas.")
+    await update.message.reply_text(
+        "Notificacoes de novidades desativadas.",
+        reply_markup=build_main_reply_keyboard(),
+    )
 
 
 async def updates_on(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -156,7 +159,10 @@ async def updates_on(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     with SessionLocal() as db:
         UserRepository(db).set_receive_updates_notifications(user.id, True)
 
-    await update.message.reply_text("Notificacoes de novidades reativadas.")
+    await update.message.reply_text(
+        "Notificacoes de novidades reativadas.",
+        reply_markup=build_main_reply_keyboard(),
+    )
 
 
 async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -167,14 +173,17 @@ async def add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     try:
         parsed_expense = parse_add_command(context.args)
     except ExpenseValidationError as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), reply_markup=build_main_reply_keyboard())
         return
 
     with SessionLocal() as db:
         repository = ExpenseRepository(db)
         expense = ExpenseService(repository).add_expense(user.id, parsed_expense)
 
-    await update.message.reply_text(format_expense_saved(expense, "registrado"))
+    await update.message.reply_text(
+        format_expense_saved(expense, "registrado"),
+        reply_markup=build_main_reply_keyboard(),
+    )
 
 
 async def add_income(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -185,13 +194,13 @@ async def add_income(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     try:
         parsed_income = parse_income_command(context.args)
     except ExpenseValidationError as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), reply_markup=build_main_reply_keyboard())
         return
 
     with SessionLocal() as db:
         income = IncomeService(IncomeRepository(db)).add_income(user.id, parsed_income)
 
-    await update.message.reply_text(format_income_saved(income))
+    await update.message.reply_text(format_income_saved(income), reply_markup=build_main_reply_keyboard())
 
 
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -212,7 +221,10 @@ async def available_daily(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
         available = analytics.get_available_daily_amount(user.id)
 
-    await update.message.reply_text(format_available_daily(available))
+    await update.message.reply_text(
+        format_available_daily(available),
+        reply_markup=build_main_reply_keyboard(),
+    )
 
 
 async def smart_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -229,7 +241,10 @@ async def smart_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         summary = analytics.get_smart_summary(user.id)
 
-    await update.message.reply_text(format_smart_summary(summary))
+    await update.message.reply_text(
+        format_smart_summary(summary),
+        reply_markup=build_main_reply_keyboard(),
+    )
 
 
 async def set_budget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -240,7 +255,7 @@ async def set_budget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     try:
         parsed_budget = parse_budget_command(context.args)
     except ExpenseValidationError as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), reply_markup=build_main_reply_keyboard())
         return
 
     with SessionLocal() as db:
@@ -248,7 +263,7 @@ async def set_budget(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         budget_service.set_budget(user.id, parsed_budget)
         status = budget_service.get_budget_status(user.id)
 
-    await update.message.reply_text(format_budget_saved(status))
+    await update.message.reply_text(format_budget_saved(status), reply_markup=build_main_reply_keyboard())
 
 
 async def forecast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -265,7 +280,7 @@ async def forecast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
         result = analytics.get_forecast(user.id)
 
-    await update.message.reply_text(format_forecast(result))
+    await update.message.reply_text(format_forecast(result), reply_markup=build_main_reply_keyboard())
 
 
 async def compare_months(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -282,7 +297,7 @@ async def compare_months(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         result = analytics.compare_with_previous_month(user.id)
 
-    await update.message.reply_text(format_comparison(result))
+    await update.message.reply_text(format_comparison(result), reply_markup=build_main_reply_keyboard())
 
 
 async def spending_insights(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -299,7 +314,10 @@ async def spending_insights(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         )
         result = analytics.get_spending_insights(user.id)
 
-    await update.message.reply_text(format_spending_insights(result))
+    await update.message.reply_text(
+        format_spending_insights(result),
+        reply_markup=build_main_reply_keyboard(),
+    )
 
 
 async def add_fixed_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -310,7 +328,7 @@ async def add_fixed_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     try:
         parsed_fixed_expense = parse_fixed_expense_command(context.args)
     except ExpenseValidationError as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), reply_markup=build_main_reply_keyboard())
         return
 
     with SessionLocal() as db:
@@ -319,7 +337,10 @@ async def add_fixed_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             parsed_fixed_expense,
         )
 
-    await update.message.reply_text(format_fixed_expense_saved(fixed_expense))
+    await update.message.reply_text(
+        format_fixed_expense_saved(fixed_expense),
+        reply_markup=build_main_reply_keyboard(),
+    )
 
 
 async def fixed_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -330,7 +351,7 @@ async def fixed_expenses(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     with SessionLocal() as db:
         summary = FixedExpenseService(FixedExpenseRepository(db)).list_fixed_expenses(user.id)
 
-    await update.message.reply_text(format_fixed_expenses(summary))
+    await update.message.reply_text(format_fixed_expenses(summary), reply_markup=build_main_reply_keyboard())
 
 
 async def delete_fixed_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -341,7 +362,7 @@ async def delete_fixed_expense(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         fixed_expense_id = parse_fixed_expense_id(context.args)
     except ExpenseValidationError as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), reply_markup=build_main_reply_keyboard())
         return
 
     with SessionLocal() as db:
@@ -351,10 +372,16 @@ async def delete_fixed_expense(update: Update, context: ContextTypes.DEFAULT_TYP
         )
 
     if not deleted:
-        await update.message.reply_text("Gasto fixo nao encontrado para o seu usuario.")
+        await update.message.reply_text(
+            "Gasto fixo nao encontrado para o seu usuario.",
+            reply_markup=build_main_reply_keyboard(),
+        )
         return
 
-    await update.message.reply_text(f"Gasto fixo #{fixed_expense_id} apagado.")
+    await update.message.reply_text(
+        f"Gasto fixo #{fixed_expense_id} apagado.",
+        reply_markup=build_main_reply_keyboard(),
+    )
 
 
 async def edit_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -365,7 +392,7 @@ async def edit_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     try:
         expense_id, parsed_expense = parse_edit_command(context.args)
     except ExpenseValidationError as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), reply_markup=build_main_reply_keyboard())
         return
 
     with SessionLocal() as db:
@@ -373,10 +400,16 @@ async def edit_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         expense = ExpenseService(repository).edit_expense(user.id, expense_id, parsed_expense)
 
     if not expense:
-        await update.message.reply_text("Gasto nao encontrado para o seu usuario.")
+        await update.message.reply_text(
+            "Gasto nao encontrado para o seu usuario.",
+            reply_markup=build_main_reply_keyboard(),
+        )
         return
 
-    await update.message.reply_text(format_expense_saved(expense, "atualizado"))
+    await update.message.reply_text(
+        format_expense_saved(expense, "atualizado"),
+        reply_markup=build_main_reply_keyboard(),
+    )
 
 
 async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -387,7 +420,7 @@ async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         expense_id = parse_delete_command(context.args)
     except ExpenseValidationError as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), reply_markup=build_main_reply_keyboard())
         return
 
     with SessionLocal() as db:
@@ -395,10 +428,16 @@ async def delete_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         deleted = ExpenseService(repository).delete_expense(user.id, expense_id)
 
     if not deleted:
-        await update.message.reply_text("Gasto nao encontrado para o seu usuario.")
+        await update.message.reply_text(
+            "Gasto nao encontrado para o seu usuario.",
+            reply_markup=build_main_reply_keyboard(),
+        )
         return
 
-    await update.message.reply_text(f"Gasto #{expense_id} apagado.")
+    await update.message.reply_text(
+        f"Gasto #{expense_id} apagado.",
+        reply_markup=build_main_reply_keyboard(),
+    )
 
 
 async def month_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -410,7 +449,7 @@ async def month_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         repository = ExpenseRepository(db)
         summary = ReportService(repository).get_current_month_summary(user.id)
 
-    await update.message.reply_text(format_month_summary(summary))
+    await update.message.reply_text(format_month_summary(summary), reply_markup=build_main_reply_keyboard())
 
 
 async def today_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -426,14 +465,14 @@ async def day_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     try:
         target_date = parse_day_command(context.args)
     except ExpenseValidationError as exc:
-        await update.message.reply_text(str(exc))
+        await update.message.reply_text(str(exc), reply_markup=build_main_reply_keyboard())
         return
 
     with SessionLocal() as db:
         repository = ExpenseRepository(db)
         summary = ReportService(repository).get_day_summary(user.id, target_date)
 
-    await update.message.reply_text(format_day_summary(summary))
+    await update.message.reply_text(format_day_summary(summary), reply_markup=build_main_reply_keyboard())
 
 
 async def chart_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
