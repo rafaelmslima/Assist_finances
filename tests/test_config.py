@@ -6,6 +6,13 @@ from app.config import get_database_url, get_settings
 
 
 class DatabaseUrlConfigTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.load_dotenv_patcher = patch("app.config.load_dotenv", return_value=None)
+        self.load_dotenv_patcher.start()
+
+    def tearDown(self) -> None:
+        self.load_dotenv_patcher.stop()
+
     def test_database_url_defaults_to_local_sqlite_when_missing(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(get_database_url(), "sqlite:///./finance_bot.db")

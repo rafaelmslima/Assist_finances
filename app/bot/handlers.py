@@ -38,6 +38,7 @@ from app.database.repository import (
     FixedExpenseRepository,
     IncomeRepository,
     SalaryConfigRepository,
+    TicketBenefitRepository,
     UpdateBroadcastRepository,
     UserRepository,
 )
@@ -263,6 +264,7 @@ async def available_daily(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             BudgetRepository(db),
             FixedExpenseRepository(db),
             SalaryConfigRepository(db),
+            TicketBenefitRepository(db),
         )
         available = analytics.get_available_daily_amount(user.id)
 
@@ -284,6 +286,7 @@ async def smart_summary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             BudgetRepository(db),
             FixedExpenseRepository(db),
             SalaryConfigRepository(db),
+            TicketBenefitRepository(db),
         )
         summary = analytics.get_smart_summary(user.id)
 
@@ -324,6 +327,7 @@ async def forecast(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             BudgetRepository(db),
             FixedExpenseRepository(db),
             SalaryConfigRepository(db),
+            TicketBenefitRepository(db),
         )
         result = analytics.get_forecast(user.id)
 
@@ -342,6 +346,7 @@ async def compare_months(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             BudgetRepository(db),
             FixedExpenseRepository(db),
             SalaryConfigRepository(db),
+            TicketBenefitRepository(db),
         )
         result = analytics.compare_with_previous_month(user.id)
 
@@ -360,6 +365,7 @@ async def spending_insights(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             BudgetRepository(db),
             FixedExpenseRepository(db),
             SalaryConfigRepository(db),
+            TicketBenefitRepository(db),
         )
         result = analytics.get_spending_insights(user.id)
 

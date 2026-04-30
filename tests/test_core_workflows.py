@@ -21,6 +21,7 @@ from app.database.repository import (
     FixedExpenseRepository,
     IncomeRepository,
     SalaryConfigRepository,
+    TicketBenefitRepository,
     UpdateBroadcastRepository,
     UserRepository,
 )
@@ -35,7 +36,9 @@ from app.services.expense_service import ExpenseService
 from app.services.fixed_expense_service import FixedExpenseService
 from app.services.income_service import IncomeService
 from app.services.recurring_expense_service import RecurringExpenseService
+from app.services.report_service import ReportService
 from app.services.salary_service import ParsedSalary, SalaryService, SCHEDULE_FIFTH_BUSINESS_DAY, SCHEDULE_FIXED_DAY, fifth_business_day
+from app.services.ticket_service import BENEFIT_ALIMENTACAO, BENEFIT_REFEICAO, PAYMENT_MONEY, PAYMENT_TICKET_ALIMENTACAO, PAYMENT_TICKET_REFEICAO, TicketBalanceError, TicketService
 from app.services.user_service import TelegramUserData, UserService
 from app.bot.commands import format_recurring_expense_suggestion, format_spending_insights
 from app.bot.keyboards import (
@@ -99,10 +102,10 @@ class RepositoryWorkflowTest(unittest.TestCase):
         self.assertEqual(
             keyboard.to_dict()["keyboard"],
             [
-                [{"text": MAIN_BUTTON_ADD_EXPENSE}, {"text": MAIN_BUTTON_SALARY}],
-                [{"text": MAIN_BUTTON_TODAY}, {"text": MAIN_BUTTON_MONTH}],
-                [{"text": MAIN_BUTTON_CHARTS}, {"text": MAIN_BUTTON_INSIGHTS}],
-                [{"text": MAIN_BUTTON_AVAILABLE}, {"text": MAIN_BUTTON_HELP}],
+                [{"text": "💸 Salvar gasto"}, {"text": "💰 Salario"}],
+                [{"text": "📅 Hoje"}, {"text": "📊 Resumo do mes"}],
+                [{"text": "📈 Graficos"}, {"text": "🧠 Padroes"}],
+                [{"text": "💵 Disponivel"}, {"text": "❓ Ajuda"}],
             ],
         )
         self.assertTrue(keyboard.resize_keyboard)
@@ -418,8 +421,8 @@ class RepositoryWorkflowTest(unittest.TestCase):
 
         self.assertEqual(result["remaining_balance"], 1600)
         self.assertEqual(result["days_remaining"], 16)
-        self.assertEqual(result["trend"], "acima do normal")
-        self.assertLess(result["daily_amount"], 100)
+        self.assertEqual(result["trend"], "normal")
+        self.assertEqual(result["daily_amount"], 100)
 
     def test_smart_summary_flags_budget_usage_and_negative_projection(self):
         user = self._create_user(805)
@@ -453,6 +456,8 @@ class RepositoryWorkflowTest(unittest.TestCase):
 
         self.assertEqual(result["monthly_expenses"], 900)
         self.assertEqual(result["current_balance"], 100)
+        self.assertEqual(result["available_balance"], -100)
+        self.assertEqual(result["fixed_expenses"], 200)
         self.assertEqual(result["budget_used_percent"], 90)
         self.assertIn("Voce ja usou mais de 80% do seu orcamento mensal.", result["alerts"])
         self.assertIn("Seu saldo projetado esta negativo.", result["alerts"])
@@ -489,7 +494,7 @@ class RepositoryWorkflowTest(unittest.TestCase):
             summary = ReportService(
                 ExpenseRepository(db),
                 SalaryConfigRepository(db),
-            ).get_current_month_summary(user.id)
+            ).get_current_month_summary(user.id, target_date)
             available = AnalyticsService(
                 ExpenseRepository(db),
                 IncomeRepository(db),
@@ -504,6 +509,128 @@ class RepositoryWorkflowTest(unittest.TestCase):
         self.assertEqual(summary["cycle_end"], date(2026, 4, 23))
         self.assertEqual(available["monthly_income"], 3200)
         self.assertEqual(available["monthly_expenses"], 600)
+
+    def test_available_balance_is_consistent_across_summary_available_and_daily_forecast(self):
+        user = self._create_user(811)
+        target_date = date(2026, 4, 10)
+
+        with self.Session() as db:
+            salary_service = SalaryService(SalaryConfigRepository(db), IncomeRepository(db))
+            salary_service.configure_salary(
+                user.id,
+                ParsedSalary(amount=3000, schedule_type=SCHEDULE_FIXED_DAY, pay_day=1),
+                received_on=date(2026, 4, 1),
+            )
+            expense = ExpenseService(ExpenseRepository(db)).add_expense(
+                user.id,
+                ParsedExpense(amount=700, category="mercado", description=None),
+            )
+            FixedExpenseService(FixedExpenseRepository(db)).add_fixed_expense(
+                user.id,
+                ParsedFixedExpense(amount=500, category="moradia", description=None),
+            )
+            expense.created_at = datetime(2026, 4, 5)
+            db.commit()
+
+            analytics = AnalyticsService(
+                ExpenseRepository(db),
+                IncomeRepository(db),
+                BudgetRepository(db),
+                FixedExpenseRepository(db),
+                SalaryConfigRepository(db),
+            )
+            available = analytics.get_available_daily_amount(user.id, target_date)
+            summary = analytics.get_smart_summary(user.id, target_date)
+            forecast = analytics.get_forecast(user.id, target_date)
+
+        self.assertEqual(available["remaining_balance"], 1800)
+        self.assertEqual(summary["available_balance"], 1800)
+        self.assertEqual(forecast["available_balance"], 1800)
+
+    def test_ticket_expense_debits_ticket_without_reducing_money_available(self):
+        user = self._create_user(812)
+        target_date = date(2026, 4, 10)
+
+        with self.Session() as db:
+            salary_service = SalaryService(SalaryConfigRepository(db), IncomeRepository(db))
+            salary_service.configure_salary(
+                user.id,
+                ParsedSalary(amount=3000, schedule_type=SCHEDULE_FIXED_DAY, pay_day=1),
+                received_on=date(2026, 4, 1),
+            )
+            ticket_service = TicketService(TicketBenefitRepository(db), SalaryConfigRepository(db))
+            ticket_service.configure_benefit(user.id, BENEFIT_ALIMENTACAO, 600, target_date)
+            expense_service = ExpenseService(ExpenseRepository(db), ticket_service)
+            money_expense = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=500, category="mercado", description=None),
+                payment_source=PAYMENT_MONEY,
+            )
+            ticket_expense = expense_service.add_expense(
+                user.id,
+                ParsedExpense(amount=200, category="almoco", description=None),
+                payment_source=PAYMENT_TICKET_ALIMENTACAO,
+            )
+            money_expense.created_at = datetime(2026, 4, 5)
+            ticket_expense.created_at = datetime(2026, 4, 6)
+            db.commit()
+
+            analytics = AnalyticsService(
+                ExpenseRepository(db),
+                IncomeRepository(db),
+                BudgetRepository(db),
+                FixedExpenseRepository(db),
+                SalaryConfigRepository(db),
+                TicketBenefitRepository(db),
+            )
+            available = analytics.get_available_daily_amount(user.id, target_date)
+            summary = analytics.get_smart_summary(user.id, target_date)
+
+        self.assertEqual(available["monthly_expenses"], 500)
+        self.assertEqual(available["remaining_balance"], 2500)
+        self.assertEqual(summary["available_balance"], 2500)
+        self.assertEqual(summary["ticket_summaries"][0].current_balance, 400)
+        self.assertEqual(summary["ticket_summaries"][0].spent, 200)
+
+    def test_ticket_expense_is_blocked_when_balance_is_insufficient(self):
+        user = self._create_user(813)
+
+        with self.Session() as db:
+            ticket_service = TicketService(TicketBenefitRepository(db), SalaryConfigRepository(db))
+            ticket_service.configure_benefit(user.id, BENEFIT_REFEICAO, 100, date(2026, 4, 1))
+
+            with self.assertRaises(TicketBalanceError):
+                ExpenseService(ExpenseRepository(db), ticket_service).add_expense(
+                    user.id,
+                    ParsedExpense(amount=150, category="almoco", description=None),
+                    payment_source=PAYMENT_TICKET_REFEICAO,
+                )
+
+    def test_ticket_balance_reloads_when_cycle_changes(self):
+        user = self._create_user(814)
+
+        with self.Session() as db:
+            salary_service = SalaryService(SalaryConfigRepository(db), IncomeRepository(db))
+            salary_service.configure_salary(
+                user.id,
+                ParsedSalary(amount=3000, schedule_type=SCHEDULE_FIXED_DAY, pay_day=1),
+                received_on=date(2026, 4, 1),
+            )
+            ticket_service = TicketService(TicketBenefitRepository(db), SalaryConfigRepository(db))
+            ticket_service.configure_benefit(user.id, BENEFIT_REFEICAO, 500, date(2026, 4, 1))
+            ExpenseService(ExpenseRepository(db), ticket_service).add_expense(
+                user.id,
+                ParsedExpense(amount=200, category="almoco", description=None),
+                payment_source=PAYMENT_TICKET_REFEICAO,
+            )
+            self.assertEqual(TicketBenefitRepository(db).get_by_type(user.id, BENEFIT_REFEICAO).current_balance, 300)
+
+            ticket_service.refresh_cycle_balances(user.id, date(2026, 5, 2))
+
+            benefit = TicketBenefitRepository(db).get_by_type(user.id, BENEFIT_REFEICAO)
+
+        self.assertEqual(benefit.current_balance, 500)
+        self.assertEqual(benefit.cycle_start, date(2026, 5, 1))
 
     def test_salary_auto_reload_uses_fixed_day_and_avoids_duplicate(self):
         user = self._create_user(810)
@@ -527,7 +654,7 @@ class RepositoryWorkflowTest(unittest.TestCase):
     def test_fifth_business_day_ignores_weekends(self):
         self.assertEqual(fifth_business_day(2026, 5), date(2026, 5, 7))
 
-    def test_spending_insights_detects_weekend_category_growth_and_high_trend(self):
+    def test_spending_insights_detects_weekend_category_growth_and_current_trend(self):
         user = self._create_user(806)
         target_date = date(2026, 4, 15)
 
@@ -571,12 +698,12 @@ class RepositoryWorkflowTest(unittest.TestCase):
         self.assertEqual(result["weekday_pattern"]["type"], "weekend")
         self.assertEqual(result["category_growth"][0]["category"], "alimentacao")
         self.assertEqual(result["category_growth"][0]["percent"], 30.0)
-        self.assertEqual(result["trend"], "acima do normal")
+        self.assertEqual(result["trend"], "normal")
 
         message = format_spending_insights(result)
         self.assertIn("Você gasta mais aos fins de semana", message)
         self.assertIn("alimentacao aumentou 30%", message)
-        self.assertIn("Seus gastos estão acima do normal", message)
+        self.assertIn("Seus gastos estão dentro do normal", message)
 
     def test_recurring_expense_suggestion_detects_monthly_similar_expense(self):
         user = self._create_user(807)

@@ -58,7 +58,7 @@ Exemplos:
 /resumo
 /insights
 
-Dica: quanto mais meses registrados, melhor fica a comparacao com seu padrao.
+Dica: mantenha os lancamentos do ciclo atual em dia para melhorar a media diaria.
 """.strip(),
     "month_summary": """
 📊 Resumo do mês

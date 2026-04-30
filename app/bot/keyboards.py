@@ -17,6 +17,17 @@ CHART_CLOSE_CALLBACK = f"{CHART_PREFIX}:close"
 RECURRING_FIXED_PREFIX = "recurringfixed"
 RECURRING_FIXED_YES_CALLBACK = f"{RECURRING_FIXED_PREFIX}:yes"
 RECURRING_FIXED_NO_CALLBACK = f"{RECURRING_FIXED_PREFIX}:no"
+ONBOARDING_PREFIX = "onboarding"
+PAYMENT_PREFIX = "payment"
+ONBOARDING_YES = f"{ONBOARDING_PREFIX}:yes"
+ONBOARDING_NO = f"{ONBOARDING_PREFIX}:no"
+ONBOARDING_ONE_TICKET = f"{ONBOARDING_PREFIX}:ticket_count:1"
+ONBOARDING_TWO_TICKETS = f"{ONBOARDING_PREFIX}:ticket_count:2"
+ONBOARDING_TICKET_FOOD = f"{ONBOARDING_PREFIX}:ticket_type:alimentacao"
+ONBOARDING_TICKET_MEAL = f"{ONBOARDING_PREFIX}:ticket_type:refeicao"
+PAYMENT_MONEY_CALLBACK = f"{PAYMENT_PREFIX}:money"
+PAYMENT_TICKET_FOOD_CALLBACK = f"{PAYMENT_PREFIX}:ticket_alimentacao"
+PAYMENT_TICKET_MEAL_CALLBACK = f"{PAYMENT_PREFIX}:ticket_refeicao"
 
 TUTORIAL_TOPICS = [
     ("➕ Registrar gasto", "expense"),
@@ -40,14 +51,14 @@ CHART_OPTIONS = [
     ("📌 Fixos x variáveis", "fixed_variable"),
 ]
 
-MAIN_BUTTON_ADD_EXPENSE = "Salvar gasto"
-MAIN_BUTTON_SALARY = "Salario"
-MAIN_BUTTON_TODAY = "Hoje"
-MAIN_BUTTON_MONTH = "Resumo do mes"
-MAIN_BUTTON_CHARTS = "Graficos"
-MAIN_BUTTON_INSIGHTS = "Padroes"
-MAIN_BUTTON_AVAILABLE = "Disponivel"
-MAIN_BUTTON_HELP = "Ajuda"
+MAIN_BUTTON_ADD_EXPENSE = "💸 Salvar gasto"
+MAIN_BUTTON_SALARY = "💰 Salario"
+MAIN_BUTTON_TODAY = "📅 Hoje"
+MAIN_BUTTON_MONTH = "📊 Resumo do mes"
+MAIN_BUTTON_CHARTS = "📈 Graficos"
+MAIN_BUTTON_INSIGHTS = "🧠 Padroes"
+MAIN_BUTTON_AVAILABLE = "💵 Disponivel"
+MAIN_BUTTON_HELP = "❓ Ajuda"
 
 
 def build_main_reply_keyboard() -> ReplyKeyboardMarkup:
@@ -113,6 +124,46 @@ def build_expense_confirmation_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton("✅ Confirmar", callback_data=CONFIRM_EXPENSE_CALLBACK),
                 InlineKeyboardButton("❌ Cancelar", callback_data=CANCEL_EXPENSE_CALLBACK),
+            ]
+        ]
+    )
+
+
+def build_payment_source_keyboard(payment_sources: list[str]) -> InlineKeyboardMarkup:
+    rows = [[InlineKeyboardButton("💵 Dinheiro", callback_data=PAYMENT_MONEY_CALLBACK)]]
+    ticket_buttons = []
+    if "ticket_alimentacao" in payment_sources:
+        ticket_buttons.append(InlineKeyboardButton("🍎 Ticket Alimentacao", callback_data=PAYMENT_TICKET_FOOD_CALLBACK))
+    if "ticket_refeicao" in payment_sources:
+        ticket_buttons.append(InlineKeyboardButton("🍽️ Ticket Refeicao", callback_data=PAYMENT_TICKET_MEAL_CALLBACK))
+    if ticket_buttons:
+        rows.append(ticket_buttons)
+    return InlineKeyboardMarkup(rows)
+
+
+def build_yes_no_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Sim", callback_data=ONBOARDING_YES), InlineKeyboardButton("Nao", callback_data=ONBOARDING_NO)]]
+    )
+
+
+def build_ticket_count_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("1 beneficio", callback_data=ONBOARDING_ONE_TICKET),
+                InlineKeyboardButton("2 beneficios", callback_data=ONBOARDING_TWO_TICKETS),
+            ]
+        ]
+    )
+
+
+def build_ticket_type_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("🍎 Alimentacao", callback_data=ONBOARDING_TICKET_FOOD),
+                InlineKeyboardButton("🍽️ Refeicao", callback_data=ONBOARDING_TICKET_MEAL),
             ]
         ]
     )

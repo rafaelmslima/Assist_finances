@@ -2,6 +2,7 @@ from app.database.models import Budget
 from app.database.repository import BudgetRepository, ExpenseRepository, SalaryConfigRepository
 from app.services.date_service import month_range
 from app.services.financial_cycle_service import FinancialCycleService
+from app.services.ticket_service import PAYMENT_MONEY
 from app.utils.money import ZERO, to_money
 from app.utils.validators import ParsedBudget
 
@@ -41,6 +42,7 @@ class BudgetService:
             user_id=user_id,
             start_date=start_date,
             end_date=end_date,
+            payment_sources=[PAYMENT_MONEY],
         )
         total_spent = to_money(sum(expenses_by_category.values(), ZERO))
 

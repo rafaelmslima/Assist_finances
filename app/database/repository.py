@@ -5,7 +5,7 @@ from sqlalchemy import Select, delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.database.models import Budget, DailyNotification, Expense, FixedExpense, Income, SalaryConfig, UpdateBroadcast, User
+from app.database.models import Budget, DailyNotification, Expense, FixedExpense, Income, SalaryConfig, TicketBenefit, UpdateBroadcast, User
 from app.utils.money import to_money
 
 
@@ -115,6 +115,15 @@ class UserRepository:
         self.db.refresh(user)
         return user
 
+    def mark_onboarding_completed(self, user_id: int) -> User | None:
+        user = self.db.get(User, user_id)
+        if not user:
+            return None
+        user.onboarding_completed = True
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
 
 class UpdateBroadcastRepository:
     def __init__(self, db: Session):
@@ -151,6 +160,7 @@ class ExpenseRepository:
         amount: Decimal | float | int | str,
         category: str,
         description: str | None = None,
+        payment_source: str = "money",
     ) -> Expense:
         expense = Expense(
             user_id=user_id,
@@ -158,6 +168,7 @@ class ExpenseRepository:
             amount=to_money(amount),
             category=category,
             description=description,
+            payment_source=payment_source,
         )
         self.db.add(expense)
         self.db.commit()
@@ -204,14 +215,18 @@ class ExpenseRepository:
         user_id: int,
         start_date: datetime,
         end_date: datetime,
+        payment_sources: list[str] | None = None,
     ) -> list[Expense]:
+        filters = [
+            Expense.user_id == user_id,
+            Expense.created_at >= start_date,
+            Expense.created_at < end_date,
+        ]
+        if payment_sources is not None:
+            filters.append(Expense.payment_source.in_(payment_sources))
         statement: Select[tuple[Expense]] = (
             select(Expense)
-            .where(
-                Expense.user_id == user_id,
-                Expense.created_at >= start_date,
-                Expense.created_at < end_date,
-            )
+            .where(*filters)
             .order_by(Expense.created_at.asc(), Expense.id.asc())
         )
         return list(self.db.scalars(statement).all())
@@ -221,14 +236,18 @@ class ExpenseRepository:
         user_id: int,
         start_date: datetime,
         end_date: datetime,
+        payment_sources: list[str] | None = None,
     ) -> dict[str, Decimal]:
+        filters = [
+            Expense.user_id == user_id,
+            Expense.created_at >= start_date,
+            Expense.created_at < end_date,
+        ]
+        if payment_sources is not None:
+            filters.append(Expense.payment_source.in_(payment_sources))
         statement = (
             select(Expense.category, func.sum(Expense.amount))
-            .where(
-                Expense.user_id == user_id,
-                Expense.created_at >= start_date,
-                Expense.created_at < end_date,
-            )
+            .where(*filters)
             .group_by(Expense.category)
             .order_by(func.sum(Expense.amount).desc())
         )
@@ -239,12 +258,16 @@ class ExpenseRepository:
         user_id: int,
         start_date: datetime,
         end_date: datetime,
+        payment_sources: list[str] | None = None,
     ) -> int:
-        statement = select(func.count(Expense.id)).where(
+        filters = [
             Expense.user_id == user_id,
             Expense.created_at >= start_date,
             Expense.created_at < end_date,
-        )
+        ]
+        if payment_sources is not None:
+            filters.append(Expense.payment_source.in_(payment_sources))
+        statement = select(func.count(Expense.id)).where(*filters)
         return int(self.db.scalar(statement) or 0)
 
     def total_by_period(
@@ -252,12 +275,16 @@ class ExpenseRepository:
         user_id: int,
         start_date: datetime,
         end_date: datetime,
+        payment_sources: list[str] | None = None,
     ) -> Decimal:
-        statement = select(func.sum(Expense.amount)).where(
+        filters = [
             Expense.user_id == user_id,
             Expense.created_at >= start_date,
             Expense.created_at < end_date,
-        )
+        ]
+        if payment_sources is not None:
+            filters.append(Expense.payment_source.in_(payment_sources))
+        statement = select(func.sum(Expense.amount)).where(*filters)
         return to_money(self.db.scalar(statement))
 
     def list_distinct_categories(self, user_id: int) -> list[str]:
@@ -484,6 +511,78 @@ class FixedExpenseRepository:
         result = self.db.execute(statement)
         self.db.commit()
         return bool(result.rowcount)
+
+
+class TicketBenefitRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_by_type(self, user_id: int, benefit_type: str) -> TicketBenefit | None:
+        statement = select(TicketBenefit).where(
+            TicketBenefit.user_id == user_id,
+            TicketBenefit.benefit_type == benefit_type,
+        )
+        return self.db.scalar(statement)
+
+    def list_by_user(self, user_id: int, active_only: bool = True) -> list[TicketBenefit]:
+        filters = [TicketBenefit.user_id == user_id]
+        if active_only:
+            filters.append(TicketBenefit.is_active.is_(True))
+        statement = (
+            select(TicketBenefit)
+            .where(*filters)
+            .order_by(TicketBenefit.benefit_type.asc())
+        )
+        return list(self.db.scalars(statement).all())
+
+    def upsert(
+        self,
+        user_id: int,
+        benefit_type: str,
+        configured_amount: Decimal | float | int | str,
+        current_balance: Decimal | float | int | str | None,
+        cycle_start: date | None,
+        is_active: bool = True,
+    ) -> TicketBenefit:
+        benefit = self.get_by_type(user_id, benefit_type)
+        amount = to_money(configured_amount)
+        balance = to_money(current_balance if current_balance is not None else configured_amount)
+        if not benefit:
+            benefit = TicketBenefit(
+                user_id=user_id,
+                telegram_user_id=_telegram_user_id_for_user_id(self.db, user_id),
+                benefit_type=benefit_type,
+                configured_amount=amount,
+                current_balance=balance,
+                cycle_start=cycle_start,
+                is_active=is_active,
+            )
+            self.db.add(benefit)
+        else:
+            benefit.configured_amount = amount
+            benefit.current_balance = balance
+            benefit.cycle_start = cycle_start
+            benefit.is_active = is_active
+        self.db.commit()
+        self.db.refresh(benefit)
+        return benefit
+
+    def update_balance(
+        self,
+        user_id: int,
+        benefit_type: str,
+        current_balance: Decimal | float | int | str,
+        cycle_start: date | None = None,
+    ) -> TicketBenefit | None:
+        benefit = self.get_by_type(user_id, benefit_type)
+        if not benefit:
+            return None
+        benefit.current_balance = to_money(current_balance)
+        if cycle_start is not None:
+            benefit.cycle_start = cycle_start
+        self.db.commit()
+        self.db.refresh(benefit)
+        return benefit
 
 
 class DailyNotificationRepository:

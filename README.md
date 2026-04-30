@@ -13,8 +13,8 @@ Bot de Telegram para controle financeiro pessoal com gastos, receitas, orcamento
 - `/edit id valor categoria descricao`: edita um gasto.
 - `/delete id`: apaga um gasto.
 - `/receita valor descricao` ou `/receitas valor descricao`: registra uma entrada financeira.
-- `/disponivel`: mostra quanto ainda da para gastar por dia ate o fim do mes.
-- `/resumo`: mostra dashboard resumido com gasto, saldo, orcamento usado, media diaria, tendencia e alertas.
+- `/disponivel`: mostra quanto ainda da para gastar por dia em dinheiro e os saldos de tickets.
+- `/resumo`: mostra dashboard resumido com gasto, saldo, tickets, orcamento usado, media diaria, tendencia e alertas.
 - `/insights`: mostra padroes automaticos de gastos por dia, categoria e tendencia.
 - `/orcamento valor`: define o orcamento total do mes atual.
 - `/orcamento categoria valor`: define o orcamento mensal de uma categoria.
@@ -44,16 +44,18 @@ Para restringir o ambiente de testes, configure `ALLOWED_TELEGRAM_IDS` com IDs s
 
 A previsao usa regras simples, preparadas para evoluir depois com IA:
 
-- calcula media diaria historica com os ultimos 3 meses;
-- se houver menos de 3 meses, usa o maximo disponivel;
-- se nao houver historico, usa o ritmo do mes atual;
-- calcula media diaria do mes atual;
+- calcula media diaria do ciclo financeiro atual;
+- se houver salario configurado, usa o ciclo do salario;
+- se nao houver salario, usa o mes-calendario atual;
+- recalcula a media todos os dias com base nos lancamentos do periodo atual;
 - projeta gastos variaveis ate o fim do mes;
 - soma os gastos fixos previstos;
 - compara com orcamento total e por categoria;
 - gera alertas para aumento acima de 20%, categoria fora do padrao, uso alto do orcamento, saldo projetado negativo e fixos maiores que receita.
 
 Gastos fixos nao entram no historico e nao sao registrados como gastos reais. Eles servem apenas para planejamento.
+
+Tickets Alimentacao e Refeicao funcionam como carteiras separadas: gastos pagos com ticket reduzem apenas o saldo do beneficio correspondente e nao reduzem o saldo em dinheiro.
 
 ## Scheduler diario
 
@@ -367,6 +369,25 @@ Eles cobrem:
 8. Rode `/comparar`.
 9. Simule dois usuarios e confirme isolamento dos dados.
 10. Para testar o scheduler sem esperar 08:00, chame `send_daily_forecasts(application)` em um script de teste com uma aplicacao fake ou ajuste temporariamente o horario do job em `app/scheduler.py`.
+
+## Reset do banco para recomecar testes
+
+O projeto inclui um script seguro para apagar dados e recriar o schema:
+
+```powershell
+$env:PYTHONPATH=".\.venv\Lib\site-packages"
+python scripts\reset_database.py --confirm RESET_ALL_DATA
+```
+
+Para PostgreSQL dedicado exclusivamente ao bot, tambem e possivel recriar o schema `public` inteiro:
+
+```powershell
+$env:DATABASE_URL="postgresql://usuario:senha@host:5432/banco"
+$env:PYTHONPATH=".\.venv\Lib\site-packages"
+python scripts\reset_database.py --confirm RESET_ALL_DATA --drop-postgres-schema
+```
+
+Use `--drop-postgres-schema` apenas em banco exclusivo do Finance Bot, porque ele remove tudo dentro do schema `public`.
 
 ## Validacao do cadastro automatico
 

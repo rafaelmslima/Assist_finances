@@ -15,6 +15,7 @@ from app.database.repository import (
     FixedExpenseRepository,
     IncomeRepository,
     SalaryConfigRepository,
+    TicketBenefitRepository,
     UserRepository,
 )
 from app.database.session import SessionLocal
@@ -64,6 +65,7 @@ async def _send_daily_forecast_to_user(
                     BudgetRepository(db),
                     FixedExpenseRepository(db),
                     SalaryConfigRepository(db),
+                    TicketBenefitRepository(db),
                 )
                 forecast = analytics.get_forecast(user.id, today)
                 message = format_forecast(forecast, daily=True)

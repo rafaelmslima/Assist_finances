@@ -51,8 +51,8 @@ START_COMMAND_LINES = [
     "/receita valor descricao opcional - registra uma entrada rapida",
     "/salario - configura salario e inicio do ciclo financeiro",
     "/salario valor - registra salario e inicia novo ciclo hoje",
-    "/disponivel - mostra quanto voce pode gastar por dia ate o fim do mes",
-    "/resumo - mostra um dashboard financeiro resumido",
+    "/disponivel - mostra quanto voce pode gastar por dia e seus saldos de ticket",
+    "/resumo - mostra um dashboard financeiro resumido com dinheiro e tickets",
     "/insights - mostra padroes automaticos de gastos",
     "/orcamento - inicia cadastro guiado de orcamento",
     "/orcamento valor ou /orcamento categoria valor - define orcamento rapido",
@@ -139,6 +139,7 @@ Dicas:
 - Use ponto ou virgula para centavos: 59.90 ou 59,90
 - O id aparece nas listagens de /hoje e /dia
 - Cada usuario ve apenas os proprios gastos
+- No fluxo guiado de /add voce pode escolher Dinheiro ou um ticket cadastrado
 - Use /updates_off para parar novidades do bot e /updates_on para reativar
 - Digite apenas /add, /receita, /fixo ou /orcamento para usar o modo guiado
 """.strip()
@@ -220,9 +221,10 @@ def format_day_summary(summary: dict[str, object]) -> str:
 
 def format_expense_saved(expense: Expense, action: str) -> str:
     description = f" ({expense.description})" if expense.description else ""
+    payment = _payment_source_label(getattr(expense, "payment_source", "money"))
     return (
         f"Gasto {action}: #{expense.id} - "
-        f"{format_currency(expense.amount)} em {expense.category}{description}."
+        f"{format_currency(expense.amount)} em {expense.category}{description} [{payment}]."
     )
 
 
@@ -272,8 +274,9 @@ def format_available_daily(available: dict[str, object]) -> str:
             format_currency(float(available["daily_amount"])),
             "",
             "📊 Base:",
-            f"Saldo restante: {format_currency(float(available['remaining_balance']))}",
+            f"Saldo em dinheiro: {format_currency(float(available['remaining_balance']))}",
             f"Dias restantes: {int(available['days_remaining'])}",
+            *_format_ticket_lines(available.get("ticket_summaries", [])),
             "",
             f"⚠️ Tendencia: {available['trend']}",
         ]
@@ -290,7 +293,10 @@ def format_smart_summary(summary: dict[str, object]) -> str:
     lines = [
         f"💸 Gasto do mes: {format_currency(float(summary['monthly_expenses']))}",
         f"💰 Saldo atual: {format_currency(float(summary['current_balance']))}",
+        f"Saldo disponivel: {format_currency(float(summary['available_balance']))}",
+        f"Fixos previstos: {format_currency(float(summary['fixed_expenses']))}",
         budget_line,
+        *_format_ticket_lines(summary.get("ticket_summaries", [])),
         f"📅 Media diaria: {format_currency(float(summary['current_daily_average']))}",
         f"📈 Tendencia: {summary['trend']}",
     ]
@@ -309,12 +315,15 @@ def format_forecast(forecast: dict[str, object], daily: bool = False) -> str:
     lines = [
         title,
         "",
-        f"Media diaria (ultimos 3 meses): {format_currency(float(forecast['historical_daily_average']))}",
+        f"Media diaria do periodo atual: {format_currency(float(forecast['historical_daily_average']))}",
         f"Gasto medio atual do mes: {format_currency(float(forecast['current_daily_average']))}",
         "",
         f"Projecao de gastos variaveis: {format_currency(float(forecast['projected_variable_expenses']))}",
         f"Gastos fixos: {format_currency(float(forecast['fixed_expenses']))}",
         f"Total previsto: {format_currency(float(forecast['total_forecast']))}",
+        f"Saldo disponivel hoje: {format_currency(float(forecast['available_balance']))}",
+        f"Saldo previsto: {format_currency(float(forecast['projected_balance']))}",
+        *_format_ticket_lines(forecast.get("ticket_summaries", [])),
         f"Tendencia: {forecast['trend']}",
     ]
 
@@ -438,3 +447,31 @@ def _format_percent(value: object) -> str:
         return "sem base anterior"
     sign = "+" if float(value) > 0 else ""
     return f"{sign}{float(value):.1f}%".replace(".", ",")
+
+
+def _format_ticket_lines(ticket_summaries: object) -> list[str]:
+    if not ticket_summaries:
+        return []
+    lines = ["", "Tickets:"]
+    for item in ticket_summaries:
+        if isinstance(item, dict):
+            label = item["label"]
+            current_balance = item["current_balance"]
+            spent = item["spent"]
+        else:
+            label = item.label
+            current_balance = item.current_balance
+            spent = item.spent
+        lines.append(
+            f"- {label}: saldo {format_currency(float(current_balance))} | "
+            f"gasto {format_currency(float(spent))}"
+        )
+    return lines
+
+
+def _payment_source_label(payment_source: str) -> str:
+    if payment_source == "ticket_alimentacao":
+        return "Ticket Alimentacao"
+    if payment_source == "ticket_refeicao":
+        return "Ticket Refeicao"
+    return "Dinheiro"

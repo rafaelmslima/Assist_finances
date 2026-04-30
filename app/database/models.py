@@ -21,6 +21,7 @@ class Expense(Base):
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     category: Mapped[str] = mapped_column(String(80), index=True, nullable=False)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    payment_source: Mapped[str] = mapped_column(String(30), default="money", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=datetime.now,
@@ -55,11 +56,13 @@ class User(Base):
     budgets: Mapped[list["Budget"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     fixed_expenses: Mapped[list["FixedExpense"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     daily_notifications: Mapped[list["DailyNotification"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    ticket_benefits: Mapped[list["TicketBenefit"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     salary_config: Mapped["SalaryConfig | None"] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
         uselist=False,
     )
+    onboarding_completed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class UpdateBroadcast(Base):
@@ -170,6 +173,30 @@ class FixedExpense(Base):
         nullable=False,
     )
     user: Mapped["User"] = relationship(back_populates="fixed_expenses")
+
+
+class TicketBenefit(Base):
+    __tablename__ = "ticket_benefits"
+    __table_args__ = (
+        UniqueConstraint("user_id", "benefit_type", name="uq_ticket_benefit_user_type"),
+        Index("ix_ticket_benefits_user_type", "user_id", "benefit_type"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, index=True, nullable=True)
+    benefit_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    configured_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    current_balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    cycle_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.now,
+        onupdate=datetime.now,
+        nullable=False,
+    )
+    user: Mapped["User"] = relationship(back_populates="ticket_benefits")
 
 
 class DailyNotification(Base):

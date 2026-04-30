@@ -105,7 +105,6 @@ def build_application() -> Application:
     for conversation_handler in build_conversation_handlers():
         application.add_handler(conversation_handler)
 
-    application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("tutorial", tutorial_command))
     application.add_handler(CommandHandler("add", add_expense))
