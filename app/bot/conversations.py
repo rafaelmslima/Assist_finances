@@ -21,6 +21,10 @@ from app.bot.handlers import (
     set_budget,
 )
 from app.bot.keyboards import (
+    ADJUST_TICKET_BOTH,
+    ADJUST_TICKET_FOOD,
+    ADJUST_TICKET_MEAL,
+    ADJUST_TICKET_PREFIX,
     CANCEL_EXPENSE_CALLBACK,
     CATEGORY_PREFIX,
     CONFIRM_EXPENSE_CALLBACK,
@@ -40,10 +44,12 @@ from app.bot.keyboards import (
     PAYMENT_TICKET_MEAL_CALLBACK,
     build_expense_category_keyboard,
     build_expense_confirmation_keyboard,
+    build_adjust_ticket_keyboard,
     build_main_reply_keyboard,
     build_payment_source_keyboard,
     build_ticket_count_keyboard,
     build_ticket_type_keyboard,
+    build_tutorial_menu_keyboard,
     build_yes_no_keyboard,
 )
 from app.database.repository import BudgetRepository, ExpenseRepository, FixedExpenseRepository, IncomeRepository, SalaryConfigRepository, TicketBenefitRepository, UserRepository
@@ -56,6 +62,7 @@ from app.services.report_service import ReportService
 from app.services.salary_service import ParsedSalary, SalaryService, SCHEDULE_FIFTH_BUSINESS_DAY, SCHEDULE_FIXED_DAY, schedule_label
 from app.services.ticket_service import (
     BENEFIT_ALIMENTACAO,
+    BENEFIT_LABELS,
     BENEFIT_REFEICAO,
     PAYMENT_MONEY,
     PAYMENT_TICKET_ALIMENTACAO,
@@ -97,6 +104,9 @@ class State(IntEnum):
     ONBOARDING_TICKET_COUNT = 19
     ONBOARDING_TICKET_TYPE = 20
     ONBOARDING_TICKET_AMOUNT = 21
+    ONBOARDING_TUTORIAL_CHOICE = 22
+    ADJUST_TICKET_TYPE = 23
+    ADJUST_TICKET_AMOUNT = 24
 
 
 async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -115,10 +125,18 @@ async def start_onboarding(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     context.user_data["guided"] = {"type": "onboarding", "user_id": user.id}
     await update.message.reply_text(
-        "Bem-vindo! Quer cadastrar seu salario agora?",
-        reply_markup=build_yes_no_keyboard(),
+        "\n".join(
+            [
+                "Bem-vindo ao seu bot financeiro pessoal.",
+                "",
+                "Com ele voce registra gastos, receitas, salario, tickets, orcamentos e acompanha resumos, previsoes e graficos do seu dinheiro.",
+                "Vamos configurar o basico agora para o bot ja calcular seu ciclo financeiro e seus saldos corretamente.",
+                "",
+                "Qual o valor do seu salario? Exemplo: 3500",
+            ]
+        )
     )
-    return State.ONBOARDING_SALARY_CHOICE
+    return State.SALARY_AMOUNT
 
 
 async def choose_onboarding_salary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -144,9 +162,8 @@ async def choose_onboarding_ticket(update: Update, context: ContextTypes.DEFAULT
     query = update.callback_query
     await query.answer()
     if query.data == ONBOARDING_NO:
-        await _finish_onboarding(query.message, context)
-        await query.edit_message_text("Tudo bem. Voce pode cadastrar tickets depois reiniciando o setup.")
-        return ConversationHandler.END
+        await query.edit_message_text("Tudo bem. Se quiser ajustar depois, use /ajustarTicket.")
+        return await _ask_onboarding_tutorial(query.message)
     if query.data == ONBOARDING_YES:
         await query.edit_message_text(
             "Voce tem 1 beneficio ou os 2?",
@@ -220,20 +237,116 @@ async def receive_onboarding_ticket_amount(update: Update, context: ContextTypes
         for item_type, item_amount in guided["ticket_amounts"].items():
             ticket_service.configure_benefit(guided["user_id"], item_type, item_amount)
 
-    await _finish_onboarding(update.message, context)
+    await update.message.reply_text("Tickets configurados. Voce pode reajustar os valores depois com /ajustarTicket.")
+    return await _ask_onboarding_tutorial(update.message)
+
+
+async def choose_onboarding_tutorial(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    if query.data == ONBOARDING_YES:
+        await query.edit_message_text("Perfeito. Vou abrir o tutorial para voce escolher por onde comecar.")
+        await _finish_onboarding(query.message, context)
+        from app.bot.tutorial import TUTORIAL_MENU_TEXT
+
+        await query.message.reply_text(
+            TUTORIAL_MENU_TEXT,
+            reply_markup=build_tutorial_menu_keyboard(),
+        )
+        return ConversationHandler.END
+    if query.data == ONBOARDING_NO:
+        await query.edit_message_text("Tudo certo. Onboarding concluido.")
+        await _finish_onboarding(query.message, context)
+        return ConversationHandler.END
+    await query.edit_message_text("Opcao invalida. Envie /start para recomecar.")
+    context.user_data.pop("guided", None)
     return ConversationHandler.END
 
 
-async def _finish_onboarding(message, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def _ask_onboarding_tutorial(message) -> int:
+    await message.reply_text(
+        "Quer fazer um tutorial rapido de como usar o bot?",
+        reply_markup=build_yes_no_keyboard(),
+    )
+    return State.ONBOARDING_TUTORIAL_CHOICE
+
+
+async def _finish_onboarding(message, context: ContextTypes.DEFAULT_TYPE, show_default_message: bool = True) -> None:
     data = context.user_data.pop("guided", {})
     user_id = data.get("user_id")
     if user_id:
         with SessionLocal() as db:
             UserRepository(db).mark_onboarding_completed(user_id)
-    await message.reply_text(
-        "Setup concluido. Voce ja pode usar o bot.",
-        reply_markup=build_main_reply_keyboard(),
+    if show_default_message:
+        await message.reply_text(
+            "Setup concluido. Voce ja pode usar o bot.",
+            reply_markup=build_main_reply_keyboard(),
+        )
+
+
+async def start_adjust_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    user = await _get_or_register_user(update)
+    if not user:
+        return ConversationHandler.END
+
+    context.user_data["guided"] = {"type": "adjust_ticket", "user_id": user.id}
+    await update.message.reply_text(
+        "Qual ticket voce quer ajustar?",
+        reply_markup=build_adjust_ticket_keyboard(),
     )
+    return State.ADJUST_TICKET_TYPE
+
+
+async def choose_adjust_ticket_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    query = update.callback_query
+    await query.answer()
+    guided = context.user_data["guided"]
+    if query.data == ADJUST_TICKET_BOTH:
+        guided["ticket_types"] = [BENEFIT_ALIMENTACAO, BENEFIT_REFEICAO]
+    elif query.data == ADJUST_TICKET_FOOD:
+        guided["ticket_types"] = [BENEFIT_ALIMENTACAO]
+    elif query.data == ADJUST_TICKET_MEAL:
+        guided["ticket_types"] = [BENEFIT_REFEICAO]
+    else:
+        await query.edit_message_text("Opcao invalida. Digite /ajustarTicket para tentar novamente.")
+        context.user_data.pop("guided", None)
+        return ConversationHandler.END
+
+    guided["ticket_index"] = 0
+    await query.edit_message_text(f"Qual o novo valor do {BENEFIT_LABELS[guided['ticket_types'][0]]}? Exemplo: 700")
+    return State.ADJUST_TICKET_AMOUNT
+
+
+async def receive_adjust_ticket_amount(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    try:
+        amount = parse_amount(update.message.text.strip(), command="/ajustarTicket")
+    except ExpenseValidationError as exc:
+        await update.message.reply_text(f"{exc}\n\nDigite o valor novamente ou use /cancelar.")
+        return State.ADJUST_TICKET_AMOUNT
+
+    guided = context.user_data["guided"]
+    ticket_types = guided["ticket_types"]
+    ticket_index = guided["ticket_index"]
+    benefit_type = ticket_types[ticket_index]
+    guided.setdefault("ticket_amounts", {})[benefit_type] = amount
+    ticket_index += 1
+    guided["ticket_index"] = ticket_index
+
+    if ticket_index < len(ticket_types):
+        await update.message.reply_text(f"Qual o novo valor do {BENEFIT_LABELS[ticket_types[ticket_index]]}? Exemplo: 700")
+        return State.ADJUST_TICKET_AMOUNT
+
+    with SessionLocal() as db:
+        ticket_service = TicketService(TicketBenefitRepository(db), SalaryConfigRepository(db))
+        for item_type, item_amount in guided["ticket_amounts"].items():
+            ticket_service.configure_benefit(guided["user_id"], item_type, item_amount)
+
+    context.user_data.pop("guided", None)
+    lines = ["Tickets atualizados:"]
+    for item_type, item_amount in guided["ticket_amounts"].items():
+        lines.append(f"- {BENEFIT_LABELS[item_type]}: {format_currency(float(item_amount))}")
+    await update.message.reply_text("\n".join(lines), reply_markup=build_main_reply_keyboard())
+    return ConversationHandler.END
 
 
 async def start_add_expense(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -754,6 +867,19 @@ def build_conversation_handlers() -> list[ConversationHandler]:
                     )
                 ],
                 State.ONBOARDING_TICKET_AMOUNT: [MessageHandler(text_filter, receive_onboarding_ticket_amount)],
+                State.ONBOARDING_TUTORIAL_CHOICE: [
+                    CallbackQueryHandler(choose_onboarding_tutorial, pattern=f"^({ONBOARDING_YES}|{ONBOARDING_NO})$")
+                ],
+            },
+            fallbacks=[CommandHandler("cancelar", cancel_conversation)],
+        ),
+        ConversationHandler(
+            entry_points=[CommandHandler("ajustarTicket", start_adjust_ticket)],
+            states={
+                State.ADJUST_TICKET_TYPE: [
+                    CallbackQueryHandler(choose_adjust_ticket_type, pattern=f"^{ADJUST_TICKET_PREFIX}:")
+                ],
+                State.ADJUST_TICKET_AMOUNT: [MessageHandler(text_filter, receive_adjust_ticket_amount)],
             },
             fallbacks=[CommandHandler("cancelar", cancel_conversation)],
         ),

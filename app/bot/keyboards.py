@@ -25,6 +25,10 @@ ONBOARDING_ONE_TICKET = f"{ONBOARDING_PREFIX}:ticket_count:1"
 ONBOARDING_TWO_TICKETS = f"{ONBOARDING_PREFIX}:ticket_count:2"
 ONBOARDING_TICKET_FOOD = f"{ONBOARDING_PREFIX}:ticket_type:alimentacao"
 ONBOARDING_TICKET_MEAL = f"{ONBOARDING_PREFIX}:ticket_type:refeicao"
+ADJUST_TICKET_PREFIX = "adjust_ticket"
+ADJUST_TICKET_FOOD = f"{ADJUST_TICKET_PREFIX}:alimentacao"
+ADJUST_TICKET_MEAL = f"{ADJUST_TICKET_PREFIX}:refeicao"
+ADJUST_TICKET_BOTH = f"{ADJUST_TICKET_PREFIX}:both"
 PAYMENT_MONEY_CALLBACK = f"{PAYMENT_PREFIX}:money"
 PAYMENT_TICKET_FOOD_CALLBACK = f"{PAYMENT_PREFIX}:ticket_alimentacao"
 PAYMENT_TICKET_MEAL_CALLBACK = f"{PAYMENT_PREFIX}:ticket_refeicao"
@@ -165,6 +169,18 @@ def build_ticket_type_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("🍎 Alimentacao", callback_data=ONBOARDING_TICKET_FOOD),
                 InlineKeyboardButton("🍽️ Refeicao", callback_data=ONBOARDING_TICKET_MEAL),
             ]
+        ]
+    )
+
+
+def build_adjust_ticket_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("Alimentacao", callback_data=ADJUST_TICKET_FOOD),
+                InlineKeyboardButton("Refeicao", callback_data=ADJUST_TICKET_MEAL),
+            ],
+            [InlineKeyboardButton("Os dois", callback_data=ADJUST_TICKET_BOTH)],
         ]
     )
 

@@ -17,6 +17,7 @@ PUBLIC_BOT_COMMANDS = [
     ("delete", "Apagar um gasto pelo ID"),
     ("receita", "Adicionar uma receita"),
     ("salario", "Configurar salario e ciclo financeiro"),
+    ("ajustarticket", "Ajustar valores dos tickets"),
     ("disponivel", "Ver quanto pode gastar por dia"),
     ("resumo", "Ver dashboard financeiro resumido"),
     ("insights", "Ver padroes automaticos de gastos"),
@@ -51,6 +52,8 @@ START_COMMAND_LINES = [
     "/receita valor descricao opcional - registra uma entrada rapida",
     "/salario - configura salario e inicio do ciclo financeiro",
     "/salario valor - registra salario e inicia novo ciclo hoje",
+    "/ajustarticket - ajusta os valores dos tickets alimentacao/refeicao",
+    "/ajustarTicket - atalho equivalente, caso voce prefira digitar em camelCase",
     "/disponivel - mostra quanto voce pode gastar por dia e seus saldos de ticket",
     "/resumo - mostra um dashboard financeiro resumido com dinheiro e tickets",
     "/insights - mostra padroes automaticos de gastos",
@@ -107,6 +110,8 @@ Receitas e planejamento:
 /receitas valor descricao opcional
 /salario
 /salario valor
+/ajustarticket
+/ajustarTicket
 /disponivel
 /resumo
 /insights
